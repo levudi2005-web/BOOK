@@ -1,0 +1,17 @@
+{
+  "name": "@bff/config",
+  "version": "0.1.0",
+  "private": true,
+  "exports": {
+    "./typescript": "./typescript.json",
+    "./prettier": "./prettier.json",
+    "./eslint": "./eslint.config.mjs"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}

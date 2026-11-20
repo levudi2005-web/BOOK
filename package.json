@@ -1,0 +1,21 @@
+{
+  "name": "bookforfreedom",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@12.21.0",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @bff/web --filter @bff/api --filter @bff/worker dev",
+    "build": "pnpm -r --if-present build",
+    "lint": "eslint .",
+    "format": "prettier --write . --config packages/config/prettier.json",
+    "test": "node --test",
+    "typecheck": "pnpm -r --if-present typecheck"
+  },
+  "devDependencies": {
+    "@bff/config": "workspace:*",
+    "eslint": "^9.19.0",
+    "prettier": "^3.5.0",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.22.0"
+  }
+}
