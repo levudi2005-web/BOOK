@@ -353,8 +353,8 @@ export function RichTextEditor({
   }
 
   return (
-    <section className="min-w-0 overflow-hidden rounded-xl border border-border bg-background" aria-label="Trình soạn thảo văn bản">
-      <div className="flex flex-wrap items-center gap-1 border-b border-border p-2" role="toolbar" aria-label="Định dạng văn bản">
+    <section className="min-w-0 overflow-visible rounded-xl border border-border bg-background" aria-label="Trình soạn thảo văn bản">
+      <div className="sticky top-2 z-20 flex flex-wrap items-center gap-1 rounded-t-xl border-b border-border bg-background/95 p-2 backdrop-blur" role="toolbar" aria-label="Định dạng văn bản">
         <ToolbarButton label="Đậm (Ctrl+B)" active={editor.isActive('bold')} onClick={() => editor.chain().focus().toggleBold().run()}><b>B</b></ToolbarButton>
         <ToolbarButton label="Nghiêng (Ctrl+I)" active={editor.isActive('italic')} onClick={() => editor.chain().focus().toggleItalic().run()}><i>I</i></ToolbarButton>
         <ToolbarButton label="Gạch chân (Ctrl+U)" active={editor.isActive('underline')} onClick={() => editor.chain().focus().toggleUnderline().run()}><u>U</u></ToolbarButton>
@@ -374,7 +374,7 @@ export function RichTextEditor({
         </select>
         <select
           aria-label="Phông chữ"
-          defaultValue=""
+          value={editor.getAttributes('textStyle').fontFamily ?? ''}
           onChange={(event) => {
             if (event.target.value) editor.chain().focus().setFontFamily(event.target.value).run();
             else editor.chain().focus().unsetFontFamily().run();
@@ -382,12 +382,12 @@ export function RichTextEditor({
           className="h-8 max-w-36 rounded-lg border border-border bg-background px-2 text-xs"
         >
           <option value="">Phông mặc định</option><option value="Arial, sans-serif">Arial</option>
-          <option value="Georgia, serif">Georgia</option><option value="var(--font-sans)">Inter</option>
-          <option value="var(--font-serif)">Lora</option><option value="'Times New Roman', serif">Times New Roman</option>
+          <option value="Georgia, serif">Georgia</option><option value="Inter, sans-serif">Inter</option>
+          <option value="Noto Serif, serif">Noto Serif</option><option value="'Times New Roman', serif">Times New Roman</option>
         </select>
         <select
           aria-label="Cỡ chữ"
-          defaultValue=""
+          value={editor.getAttributes('textStyle').fontSize?.replace(/px$/, '') ?? ''}
           onChange={(event) => {
             if (event.target.value) editor.chain().focus().setMark('textStyle', { fontSize: `${event.target.value}px` }).run();
             else editor.chain().focus().unsetMark('textStyle').run();

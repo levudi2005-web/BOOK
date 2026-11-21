@@ -205,9 +205,14 @@ test('studio rich text: format, autosave, reload and export Vietnamese PDF with 
   await editor.fill(paragraphs);
   await editor.press('Control+A');
   await page.getByRole('button', { name: 'Đậm (Ctrl+B)' }).click();
-  await page.getByLabel('Phông chữ').selectOption('var(--font-serif)');
+  await page.getByLabel('Phông chữ').selectOption('Georgia, serif');
+  await page.getByLabel('Cỡ chữ').selectOption('24');
+  await page.getByRole('button', { name: 'Căn giữa' }).click();
+  await page.getByRole('button', { name: 'Danh sách dấu đầu dòng' }).click();
   await expect(editor.locator('strong').first()).toContainText('Tiếng Việt');
   await expect(editor.locator('span[style*="font-family"]').first()).toBeVisible();
+  await expect(editor.locator('span[style*="24px"]').first()).toBeVisible();
+  await expect(editor.locator('ul').first()).toBeVisible();
 
   await page.getByLabel('Tìm', { exact: true }).fill('được lưu tự động');
   await page.getByLabel('Thay bằng', { exact: true }).fill('đã được lưu');

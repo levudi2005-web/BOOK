@@ -60,7 +60,10 @@ export function SiteFooter() {
 
         <div className="mt-10 flex flex-col gap-2 border-t border-border pt-6 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
           <p>© {new Date().getFullYear()} {siteConfig.name}. Bảo lưu mọi quyền.</p>
-          <p>Được xây dựng như một thư viện số độc lập.</p>
+          <p className="sm:text-right">
+            Phiên bản đầu tiên {siteConfig.version} — Hoàn thiện Writing Studio &amp; Office Writer.
+            Các phiên bản sửa đổi và nâng cấp sau sẽ được cập nhật trong tương lai.
+          </p>
         </div>
       </div>
     </footer>
