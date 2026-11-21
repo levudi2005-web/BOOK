@@ -116,6 +116,38 @@ test('storage: upload chunk → complete → download → quota → delete (owne
   assert.equal(quota0.body.quotaBytes, 419430400);
 
   const payload = Buffer.from('hello storage world', 'utf8');
+  const cancelledInit = await jsonRequest(`${app.url}/storage/objects`, 'POST', {
+    filename: 'cancelled.txt',
+    mimeType: 'text/plain',
+    totalBytes: payload.length,
+  }, auth(userA.accessToken));
+  assert.equal(cancelledInit.status, 201);
+  const cancelled = cancelledInit.body as { objectUuid: string; sessionUuid: string };
+  const cancelResult = await jsonRequest(
+    `${app.url}/storage/objects/${cancelled.sessionUuid}/cancel`,
+    'POST',
+    undefined,
+    auth(userA.accessToken),
+  );
+  assert.equal(cancelResult.status, 201);
+  assert.equal(cancelResult.body.status, 'ok');
+  const quotaCancelled = await jsonRequest(`${app.url}/storage/quota`, 'GET', undefined, auth(userA.accessToken));
+  assert.equal(Number(quotaCancelled.body.reservedBytes), 0);
+  const afterCancel = await jsonRequest(
+    `${app.url}/storage/objects/${cancelled.sessionUuid}/chunks`,
+    'POST',
+    { chunkIndex: 0, data: payload.toString('base64') },
+    auth(userA.accessToken),
+  );
+  assert.equal(afterCancel.status, 403);
+  const cleanCancelled = await jsonRequest(
+    `${app.url}/storage/objects/${cancelled.objectUuid}/permanent`,
+    'DELETE',
+    undefined,
+    auth(userA.accessToken),
+  );
+  assert.equal(cleanCancelled.status, 200);
+
   const init = await jsonRequest(`${app.url}/storage/objects`, 'POST', {
     filename: 'test.txt',
     mimeType: 'text/plain',
@@ -210,6 +242,13 @@ test('documents (office writer): tạo → cập nhật → đọc', async () =>
   const fetched = await jsonRequest(`${app.url}/documents/${documentUuid}`, 'GET', undefined, auth(userA.accessToken));
   assert.equal(fetched.status, 200);
   assert.equal((fetched.body.content as { text: string }).text, 'Nội dung soạn thảo văn phòng');
+
+  const removed = await jsonRequest(`${app.url}/documents/${documentUuid}`, 'DELETE', undefined, auth(userA.accessToken));
+  assert.equal(removed.status, 200);
+  const listAfterDelete = await jsonRequest(`${app.url}/documents`, 'GET', undefined, auth(userA.accessToken));
+  assert.ok(!(listAfterDelete.body.data as { documentUuid: string }[]).some((item) => item.documentUuid === documentUuid));
+  const getAfterDelete = await jsonRequest(`${app.url}/documents/${documentUuid}`, 'GET', undefined, auth(userA.accessToken));
+  assert.equal(getAfterDelete.status, 404);
 });
 
 test('admin: bootstrap → login → RBAC list users → chặn user thường', async () => {
