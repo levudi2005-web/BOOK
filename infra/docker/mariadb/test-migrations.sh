@@ -1,12 +1,12 @@
 #!/bin/bash
 # =====================================================================
-# BOOKFORFREEDOM - Áp dụng MIGRATIONS cho MariaDB TEST
+# BOOKFORFREEDOM - Áp dụng MIGRATIONS cho MariaDB TEST/STAGING cô lập
 # ---------------------------------------------------------------------
 # `install_all.sql` chỉ chứa baseline (bookuser/bookadmin 001-007).
 # Các bảng bắt buộc cho auth/session/storage/studio nằm trong
 # migrations/008..011, nên test stack phải áp dụng chúng sau baseline.
 #
-# Script này CHỈ chạy trong container test (volume trống lần đầu).
+# Script chỉ được mount vào database test/staging cô lập (volume mới).
 # =====================================================================
 set -Eeuo pipefail
 

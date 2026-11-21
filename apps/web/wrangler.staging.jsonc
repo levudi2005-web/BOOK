@@ -16,7 +16,7 @@
     }
   ],
   "vars": {
-    "NEXT_PUBLIC_API_URL": "https://freedombook.duckdns.org/api",
+    "NEXT_PUBLIC_API_URL": "https://freedombook.duckdns.org/staging-api",
     "NEXT_PUBLIC_APP_URL": "https://bookforfreedom-web-staging.levudi2005.workers.dev"
   }
 }

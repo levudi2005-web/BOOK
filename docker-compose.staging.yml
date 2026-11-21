@@ -1,0 +1,124 @@
+name: bff-staging
+
+services:
+  mariadb-staging:
+    image: mariadb:10.11
+    restart: unless-stopped
+    mem_limit: 384m
+    environment:
+      MARIADB_ROOT_PASSWORD: ${STAGING_MARIADB_ROOT_PASSWORD:?STAGING_MARIADB_ROOT_PASSWORD is required}
+      BOOKUSER_DB_USER: ${STAGING_BOOKUSER_DB_USER:?STAGING_BOOKUSER_DB_USER is required}
+      BOOKUSER_DB_PASSWORD: ${STAGING_BOOKUSER_DB_PASSWORD:?STAGING_BOOKUSER_DB_PASSWORD is required}
+      BOOKADMIN_DB_USER: ${STAGING_BOOKADMIN_DB_USER:?STAGING_BOOKADMIN_DB_USER is required}
+      BOOKADMIN_DB_PASSWORD: ${STAGING_BOOKADMIN_DB_PASSWORD:?STAGING_BOOKADMIN_DB_PASSWORD is required}
+      TZ: UTC
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+00:00
+      - --sql-mode=STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION
+    volumes:
+      - mariadb_staging_data:/var/lib/mysql
+      - ./database/sql:/opt/bookfreedom/sql:ro
+      - ./infra/docker/mariadb/init.sh:/docker-entrypoint-initdb.d/10-bookfreedom.sh:ro
+      - ./infra/docker/mariadb/test-migrations.sh:/docker-entrypoint-initdb.d/20-isolated-migrations.sh:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 20s
+    networks:
+      staging_internal:
+        aliases:
+          - mariadb-staging
+
+  meilisearch-staging:
+    image: getmeili/meilisearch:v1.12
+    restart: unless-stopped
+    mem_limit: 384m
+    environment:
+      MEILI_MASTER_KEY: ${STAGING_MEILI_MASTER_KEY:?STAGING_MEILI_MASTER_KEY is required}
+      MEILI_ENV: development
+      MEILI_NO_ANALYTICS: "true"
+      TZ: UTC
+    volumes:
+      - meilisearch_staging_data:/meili_data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:7700/health >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    networks:
+      staging_internal:
+        aliases:
+          - meilisearch-staging
+
+  api-staging:
+    image: bookforfreedom-api
+    restart: unless-stopped
+    mem_limit: 256m
+    environment:
+      NODE_ENV: production
+      APP_ENV: staging
+      APP_NAME: BOOKFORFREEDOM
+      APP_URL: https://bookforfreedom-web-staging.levudi2005.workers.dev
+      APP_PUBLIC_URL: https://bookforfreedom-web-staging.levudi2005.workers.dev
+      API_PUBLIC_URL: https://freedombook.duckdns.org/staging-api
+      WEB_PUBLIC_URL: https://bookforfreedom-web-staging.levudi2005.workers.dev
+      API_PORT: 3001
+      SESSION_SECRET: ${STAGING_SESSION_SECRET:?STAGING_SESSION_SECRET is required}
+      SESSION_COOKIE_NAME: bff_staging_session
+      COOKIE_SECURE: "true"
+      COOKIE_SAME_SITE: lax
+      TOKEN_HMAC_SECRET: ${STAGING_TOKEN_HMAC_SECRET:?STAGING_TOKEN_HMAC_SECRET is required}
+      RECOVERY_KEY_HMAC_SECRET: ${STAGING_RECOVERY_KEY_HMAC_SECRET:?STAGING_RECOVERY_KEY_HMAC_SECRET is required}
+      GATEWAY_HMAC_SECRET: ${STAGING_GATEWAY_HMAC_SECRET:?STAGING_GATEWAY_HMAC_SECRET is required}
+      BOOKUSER_DB_HOST: mariadb-staging
+      BOOKUSER_DB_PORT: 3306
+      BOOKUSER_DB_NAME: bookuser
+      BOOKUSER_DB_USER: ${STAGING_BOOKUSER_DB_USER:?STAGING_BOOKUSER_DB_USER is required}
+      BOOKUSER_DB_PASSWORD: ${STAGING_BOOKUSER_DB_PASSWORD:?STAGING_BOOKUSER_DB_PASSWORD is required}
+      BOOKADMIN_DB_HOST: mariadb-staging
+      BOOKADMIN_DB_PORT: 3306
+      BOOKADMIN_DB_NAME: bookadmin
+      BOOKADMIN_DB_USER: ${STAGING_BOOKADMIN_DB_USER:?STAGING_BOOKADMIN_DB_USER is required}
+      BOOKADMIN_DB_PASSWORD: ${STAGING_BOOKADMIN_DB_PASSWORD:?STAGING_BOOKADMIN_DB_PASSWORD is required}
+      MEILI_HOST: http://meilisearch-staging:7700
+      MEILI_MASTER_KEY: ${STAGING_MEILI_MASTER_KEY:?STAGING_MEILI_MASTER_KEY is required}
+      CORS_ORIGINS: https://bookforfreedom-web-staging.levudi2005.workers.dev
+      LOG_LEVEL: info
+      TZ: UTC
+    depends_on:
+      mariadb-staging:
+        condition: service_healthy
+      meilisearch-staging:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:3101:3001"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      staging_internal:
+        aliases:
+          - api-staging
+        ipv4_address: 172.22.0.4
+
+networks:
+  staging_internal:
+    name: bff-staging-internal
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.22.0.0/16
+
+volumes:
+  mariadb_staging_data:
+    name: bff_staging_mariadb_data
+  meilisearch_staging_data:
+    name: bff_staging_meilisearch_data

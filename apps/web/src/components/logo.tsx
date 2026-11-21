@@ -9,10 +9,10 @@ export function Logo({ className }: { className?: string }) {
         <BookOpenIcon className="h-5 w-5" />
       </span>
       <span className="leading-none">
-        <span className="block font-serif text-lg font-semibold tracking-tight text-foreground">
+        <span className="block font-serif text-base font-semibold tracking-tight text-foreground sm:text-lg">
           BOOKFOR<span className="text-accent">FREEDOM</span>
         </span>
-        <span className="mt-0.5 block text-[10px] uppercase tracking-[0.3em] text-muted-foreground">
+        <span className="mt-0.5 hidden text-[10px] uppercase tracking-[0.3em] text-muted-foreground sm:block">
           Digital Library
         </span>
       </span>

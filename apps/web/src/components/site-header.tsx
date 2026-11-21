@@ -41,7 +41,7 @@ export function SiteHeader() {
 
   return (
     <header className="sticky top-0 z-50 border-b border-border/70 bg-background/80 backdrop-blur-md">
-      <div className="container-site flex h-16 items-center justify-between gap-4">
+      <div className="container-site flex h-16 items-center justify-between gap-2 sm:gap-4">
         <div className="flex items-center gap-2">
           <button
             type="button"

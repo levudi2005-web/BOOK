@@ -6,6 +6,7 @@
     "dev": "next dev -p 3000",
     "build": "next build",
     "build:cloudflare": "opennextjs-cloudflare build",
+    "build:cloudflare:staging": "node scripts/build-cloudflare-staging.mjs",
     "preview": "wrangler dev",
     "deploy": "wrangler deploy",
     "deploy:staging": "wrangler deploy --config wrangler.staging.jsonc",

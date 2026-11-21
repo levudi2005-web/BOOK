@@ -132,6 +132,17 @@ test('auth: hồ sơ thật khi có token, đăng xuất xoá phiên', async ({ 
   expect(await page.evaluate((key) => window.localStorage.getItem(key), TOKEN_KEY)).toBeNull();
 });
 
+test('mobile layout: header không tạo tràn ngang', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/office/writer');
+  await expect(page.getByRole('banner')).toBeVisible();
+
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow).toBeLessThanOrEqual(2);
+});
+
 test('studio: autosave chương, tải ảnh bìa, publish hiển thị công khai', async ({ page, request }) => {
   const { token, bookUuid } = await seedAuthor(request);
   await signIn(page, token);
