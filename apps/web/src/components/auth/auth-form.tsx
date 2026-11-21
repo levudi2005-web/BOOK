@@ -16,6 +16,7 @@ import {
   requestEmailVerification,
   requestPasswordReset,
   resetPassword,
+  resetPasswordWithRecoveryKey,
   setAccessToken,
 } from '@/lib/api';
 
@@ -34,12 +35,12 @@ const copy: Record<Mode, { title: string; description: string; submit: string }>
   },
   forgot: {
     title: 'Quên mật khẩu',
-    description: 'Nhập email để nhận liên kết khôi phục.',
-    submit: 'Gửi liên kết',
+    description: 'Gửi yêu cầu khôi phục bằng email nếu dịch vụ email khả dụng.',
+    submit: 'Gửi yêu cầu',
   },
   reset: {
     title: 'Đặt lại mật khẩu',
-    description: 'Chọn mật khẩu mới cho tài khoản.',
+    description: 'Đặt lại bằng liên kết email hoặc Recovery Key.',
     submit: 'Đặt lại mật khẩu',
   },
   verify: {
@@ -131,24 +132,27 @@ export function AuthForm({ mode }: { mode: Mode }) {
       if (mode === 'forgot') {
         await requestPasswordReset(values.email.trim());
         setNoticeTone('info');
-        // Phản hồi trung tính: không tiết lộ tài khoản có tồn tại hay không.
         setNotice(
-          'Nếu email tồn tại trong hệ thống, chúng tôi đã gửi liên kết đặt lại mật khẩu. Vui lòng kiểm tra hộp thư.',
+          'Yêu cầu đã được ghi nhận. Hệ thống chỉ gửi liên kết khi tài khoản tồn tại và dịch vụ email khả dụng.',
         );
         return;
       }
       if (mode === 'reset') {
-        if (!token) {
-          setNoticeTone('error');
-          setNotice('Liên kết đặt lại mật khẩu không hợp lệ hoặc đã hết hạn.');
-          return;
-        }
         if (values.password !== values.confirm) {
           setNoticeTone('error');
           setNotice('Mật khẩu xác nhận không khớp.');
           return;
         }
-        await resetPassword(token, values.password);
+        if (token) {
+          await resetPassword(token, values.password);
+        } else {
+          if (!values.email.trim() || !recoveryKey.trim()) {
+            setNoticeTone('error');
+            setNotice('Nhập email/tên đăng nhập và Recovery Key để tiếp tục.');
+            return;
+          }
+          await resetPasswordWithRecoveryKey(values.email.trim(), recoveryKey.trim(), values.password);
+        }
         setNoticeTone('info');
         setNotice('Mật khẩu đã được cập nhật. Bạn có thể đăng nhập bằng mật khẩu mới.');
         toast('Đặt lại mật khẩu thành công.', 'default');
@@ -210,6 +214,32 @@ export function AuthForm({ mode }: { mode: Mode }) {
                 required
               />
             </div>
+          ) : null}
+
+          {mode === 'reset' && !token ? (
+            <>
+              <div>
+                <Label htmlFor="auth-reset-identifier">Email hoặc tên đăng nhập</Label>
+                <Input
+                  id="auth-reset-identifier"
+                  value={values.email}
+                  onChange={set('email')}
+                  autoComplete="username"
+                  required
+                />
+              </div>
+              <div>
+                <Label htmlFor="auth-recovery-key">Recovery Key</Label>
+                <Input
+                  id="auth-recovery-key"
+                  type="password"
+                  value={recoveryKey}
+                  onChange={(event) => setRecoveryKey(event.target.value)}
+                  autoComplete="off"
+                  required
+                />
+              </div>
+            </>
           ) : null}
 
           {mode === 'login' || mode === 'register' ? (

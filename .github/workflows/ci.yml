@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.21.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm --filter @bff/web test
+      - run: pnpm --filter @bff/api test
+      - run: pnpm audit --prod
+      - run: pnpm --filter @bff/web build:cloudflare
+      - run: pnpm --filter @bff/web exec wrangler deploy --config wrangler.jsonc --dry-run
+      - run: pnpm --filter @bff/web build:cloudflare:staging
+      - run: pnpm --filter @bff/web exec wrangler deploy --config wrangler.staging.jsonc --dry-run

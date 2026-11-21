@@ -14,13 +14,14 @@ import {
   changePassword,
   getMyProfile,
   getStorageQuota,
+  getStudioBook,
   isAuthError,
   listMyBooks,
   logout,
   updateMyProfile,
   type MyProfile,
   type StorageQuota,
-  type StudioBook,
+  type StudioBookDetail,
 } from '@/lib/api';
 import { BookCover } from '@/components/books/book-cover';
 
@@ -28,7 +29,18 @@ type Form = { displayName: string; bio: string; websiteUrl: string; isPublic: bo
 
 const emptyForm: Form = { displayName: '', bio: '', websiteUrl: '', isPublic: true };
 
-function PersonalBookCover({ book }: { book: StudioBook }) {
+function passwordStrength(password: string): { score: number; label: string } {
+  let score = 0;
+  if (password.length >= 8) score += 1;
+  if (password.length >= 12) score += 1;
+  if (/[a-z]/.test(password) && /[A-Z]/.test(password)) score += 1;
+  if (/\d/.test(password)) score += 1;
+  if (/[^A-Za-z0-9]/.test(password)) score += 1;
+  const labels = ['Rất yếu', 'Yếu', 'Trung bình', 'Khá', 'Mạnh', 'Rất mạnh'];
+  return { score, label: labels[Math.min(score, labels.length - 1)] };
+}
+
+function PersonalBookCover({ book }: { book: StudioBookDetail }) {
   const isPublicBook = book.visibility === 'public' && book.status === 'published';
   return (
     <BookCover
@@ -54,7 +66,7 @@ export default function ProfilePage() {
   const [form, setForm] = useState<Form>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [quota, setQuota] = useState<StorageQuota | null>(null);
-  const [books, setBooks] = useState<StudioBook[]>([]);
+  const [books, setBooks] = useState<StudioBookDetail[]>([]);
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', recoveryKey: '', newPassword: '', confirmPassword: '' });
   const [changingPassword, setChangingPassword] = useState(false);
 
@@ -77,7 +89,10 @@ export default function ProfilePage() {
       ]);
       apply(result);
       setQuota(quotaResult);
-      setBooks(booksResult.data);
+      const details = await Promise.all(
+        booksResult.data.map((book) => getStudioBook(book.bookUuid).catch(() => null)),
+      );
+      setBooks(details.filter((book): book is StudioBookDetail => book !== null));
       setError('');
       setAuthRequired(false);
     } catch (loadError) {
@@ -281,6 +296,12 @@ export default function ProfilePage() {
                 <p className="mt-1 text-xs text-muted-foreground">
                   {book.authorName || 'Chưa xác nhận tác giả'} · {book.publicationYear || 'Chưa có năm'}
                 </p>
+                {book.description ? (
+                  <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">{book.description}</p>
+                ) : null}
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {book.categories.map((category) => category.name).join(', ') || 'Chưa phân loại'} · {book.chapters.length} chương
+                </p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {book.status === 'published'
                     ? book.publicationScope === 'community' ? 'Community' : 'Cá nhân'
@@ -317,6 +338,11 @@ export default function ProfilePage() {
           <div>
             <Label htmlFor="new-password">Mật khẩu mới</Label>
             <Input id="new-password" type="password" value={passwordForm.newPassword} onChange={(event) => setPasswordForm((current) => ({ ...current, newPassword: event.target.value }))} />
+            {passwordForm.newPassword ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Độ mạnh: <span className="font-semibold text-foreground">{passwordStrength(passwordForm.newPassword).label}</span>
+              </p>
+            ) : null}
           </div>
           <div>
             <Label htmlFor="confirm-password">Xác nhận mật khẩu mới</Label>

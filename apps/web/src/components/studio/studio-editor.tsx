@@ -764,7 +764,10 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
         <div className="mt-4 flex justify-end">
           <PdfExport
             title={book.title}
-            author={authorName}
+            author={book.authorName ?? authorName}
+            publisherName={book.publisherName ?? ''}
+            publicationYear={book.publicationYear}
+            coverStorageKey={book.coverStorageKey ?? ''}
             chapters={pdfChapters}
             selectedChapterUuid={selectedUuid}
           />

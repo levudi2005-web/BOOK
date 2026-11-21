@@ -28,7 +28,8 @@ for file in \
   010_storage.sql \
   011_author_studio.sql \
   012_seed_categories.sql \
-  013_publication_scopes.sql; do
+  013_publication_scopes.sql \
+  014_publication_scope_backfill.sql; do
   echo "[bookfreedom-test] applying migrations/$file"
   run_root --default-character-set=utf8mb4 < "$SQL_DIR/migrations/$file"
 done

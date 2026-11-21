@@ -74,8 +74,21 @@ function prepareHtmlForPdf(html: string): string {
   return document.body.innerHTML;
 }
 
-function makeDocumentHtml(title: string, author: string, chapters: PdfChapter[]): string {
-  const header = `<h1>${escapeHtml(title)}</h1>${author ? `<p>${escapeHtml(author)}</p>` : ''}`;
+function makeDocumentHtml(
+  title: string,
+  author: string,
+  publisherName: string,
+  publicationYear: number | null,
+  coverUrl: string,
+  chapters: PdfChapter[],
+): string {
+  const cover = coverUrl ? `<p><img src="${escapeHtml(coverUrl)}" alt="Bìa sách" /></p>` : '';
+  const metadata = [
+    author ? `Tác giả: ${escapeHtml(author)}` : '',
+    publisherName ? `Nhà xuất bản: ${escapeHtml(publisherName)}` : '',
+    publicationYear ? `Năm xuất bản: ${publicationYear}` : '',
+  ].filter(Boolean).join('<br />');
+  const header = `${cover}<h1>${escapeHtml(title)}</h1>${metadata ? `<p>${metadata}</p>` : ''}`;
   const body = chapters.map((chapter) =>
     `<h2>${escapeHtml(chapter.title)}</h2>${chapter.content}`,
   ).join('');
@@ -85,12 +98,18 @@ function makeDocumentHtml(title: string, author: string, chapters: PdfChapter[])
 export function PdfExport({
   title,
   author = '',
+  publisherName = '',
+  publicationYear = null,
+  coverStorageKey = '',
   chapters,
   selectedChapterUuid = '',
   allowAll = true,
 }: {
   title: string;
   author?: string;
+  publisherName?: string;
+  publicationYear?: number | null;
+  coverStorageKey?: string;
   chapters: PdfChapter[];
   selectedChapterUuid?: string;
   allowAll?: boolean;
@@ -127,6 +146,13 @@ export function PdfExport({
     setError('');
     clearPreviewUrls();
     try {
+      let coverUrl = '';
+      if (coverStorageKey) {
+        const coverBlob = await downloadStorageObject(coverStorageKey);
+        const url = URL.createObjectURL(coverBlob);
+        previewUrls.current.push(url);
+        coverUrl = url;
+      }
       const chaptersHtml = await Promise.all(selectedChapters.map(async (chapter) => ({
         ...chapter,
         content: await replaceStorageImages(chapter.content, async (blob) => {
@@ -135,7 +161,7 @@ export function PdfExport({
           return url;
         }),
       })));
-      setPreviewHtml(makeDocumentHtml(title, author, chaptersHtml));
+      setPreviewHtml(makeDocumentHtml(title, author, publisherName, publicationYear, coverUrl, chaptersHtml));
       setPreviewOpen(true);
     } catch (cause) {
       setError(errorMessage(cause, 'Không thể tạo bản xem trước.'));
@@ -158,8 +184,21 @@ export function PdfExport({
       pdfMake.addVirtualFileSystem(fontModule.default);
 
       const content = [];
+      const pdfImages: Record<string, string> = {};
+      if (coverStorageKey) {
+        const coverBlob = await downloadStorageObject(coverStorageKey);
+        pdfImages.cover = await blobToDataUrl(coverBlob);
+        content.push({
+          image: 'cover',
+          width: 150,
+          alignment: 'center' as const,
+          margin: [0, 0, 0, 18] as [number, number, number, number],
+        });
+      }
       content.push({ text: title, style: 'bookTitle' });
       if (author.trim()) content.push({ text: author, style: 'bookAuthor' });
+      if (publisherName.trim()) content.push({ text: `Nhà xuất bản: ${publisherName}`, style: 'bookMetadata' });
+      if (publicationYear) content.push({ text: `Năm xuất bản: ${publicationYear}`, style: 'bookMetadata' });
 
       for (const [index, chapter] of selectedChapters.entries()) {
         content.push({
@@ -175,12 +214,14 @@ export function PdfExport({
 
       const pdf = pdfMake.createPdf({
         info: { title, author },
+        images: pdfImages,
         pageSize: 'A4',
         pageMargins: [56, 64, 56, 60],
         defaultStyle: { font: 'Roboto', fontSize: 11, lineHeight: 1.4 },
         styles: {
           bookTitle: { fontSize: 26, bold: true, alignment: 'center', margin: [0, 0, 0, 12] },
           bookAuthor: { fontSize: 12, alignment: 'center', margin: [0, 0, 0, 30] },
+          bookMetadata: { fontSize: 10, alignment: 'center', margin: [0, 0, 0, 4] },
           chapterTitle: { fontSize: 19, bold: true, margin: [0, 0, 0, 18] },
           h1: { fontSize: 19, bold: true, margin: [0, 14, 0, 8] },
           h2: { fontSize: 16, bold: true, margin: [0, 12, 0, 6] },
