@@ -7,7 +7,7 @@ import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { BookIcon, ShieldIcon } from '@/components/icons';
-import { adminBooks, getAdminToken, type AdminListMeta } from '@/lib/api';
+import { adminBooks, getAdminToken, isAuthError, type AdminListMeta } from '@/lib/api';
 
 type BookRow = {
   book_uuid: string;
@@ -43,7 +43,11 @@ export default function AdminBooksPage() {
       setError('');
       setAuthRequired(false);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Không thể tải danh sách sách.');
+      if (isAuthError(loadError)) {
+        setAuthRequired(true);
+      } else {
+        setError(loadError instanceof Error ? loadError.message : 'Không thể tải danh sách sách.');
+      }
     } finally {
       setLoading(false);
     }

@@ -7,7 +7,7 @@ import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ShieldIcon, UserIcon } from '@/components/icons';
-import { adminUsers, getAdminToken, type AdminListMeta } from '@/lib/api';
+import { adminUsers, getAdminToken, isAuthError, type AdminListMeta } from '@/lib/api';
 
 type UserRow = {
   user_uuid: string;
@@ -42,7 +42,11 @@ export default function AdminUsersPage() {
       setError('');
       setAuthRequired(false);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Không thể tải danh sách người dùng.');
+      if (isAuthError(loadError)) {
+        setAuthRequired(true);
+      } else {
+        setError(loadError instanceof Error ? loadError.message : 'Không thể tải danh sách người dùng.');
+      }
     } finally {
       setLoading(false);
     }

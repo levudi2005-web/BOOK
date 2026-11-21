@@ -8,7 +8,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { MetricCard } from '@/components/admin/metric-card';
 import { BellIcon, ShieldIcon } from '@/components/icons';
-import { adminStats, getAdminToken, type AdminStats } from '@/lib/api';
+import { adminStats, getAdminToken, isAuthError, type AdminStats } from '@/lib/api';
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -35,7 +35,11 @@ export default function AdminDashboardPage() {
       setError('');
       setAuthRequired(false);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Không thể tải số liệu.');
+      if (isAuthError(loadError)) {
+        setAuthRequired(true);
+      } else {
+        setError(loadError instanceof Error ? loadError.message : 'Không thể tải số liệu.');
+      }
     } finally {
       setLoading(false);
     }

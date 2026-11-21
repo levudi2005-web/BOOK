@@ -132,6 +132,21 @@ test('auth: hồ sơ thật khi có token, đăng xuất xoá phiên', async ({ 
   expect(await page.evaluate((key) => window.localStorage.getItem(key), TOKEN_KEY)).toBeNull();
 });
 
+test('auth: session 401 clears stale token and restores logged-out UI', async ({ page }) => {
+  await page.addInitScript(
+    ([key, token]) => window.localStorage.setItem(key as string, token as string),
+    [TOKEN_KEY, 'invalid-e2e-session'] as const,
+  );
+  await page.goto('/profile');
+
+  await expect(page.getByText('Đăng nhập để xem hồ sơ')).toBeVisible();
+  await expect
+    .poll(() => page.evaluate((key) => window.localStorage.getItem(key), TOKEN_KEY))
+    .toBeNull();
+  await expect(page.getByRole('link', { name: 'Đăng nhập', exact: true }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Đăng xuất' })).toHaveCount(0);
+});
+
 test('mobile layout: header không tạo tràn ngang', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/office/writer');

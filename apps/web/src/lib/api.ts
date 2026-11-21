@@ -177,16 +177,35 @@ export async function fetchPublishers(): Promise<{ data: ApiPublisher[] }> {
 // ---------------------------------------------------------------------------
 
 const TOKEN_KEY = 'bff_access_token';
+const ACCESS_TOKEN_CHANGE_EVENT = 'bff:access-token-change';
+const AUTH_REQUESTS_THAT_MAY_REJECT_CREDENTIALS = new Set([
+  '/auth/register',
+  '/auth/login',
+  '/auth/reset-password',
+  '/auth/password/forgot',
+  '/auth/password/reset',
+  '/auth/email/verification/confirm',
+  '/auth/change-password',
+  '/auth/security-key/rotate',
+  '/admin/auth/login',
+]);
 
 export function getAccessToken(): string {
   if (typeof window === 'undefined') return '';
   return window.localStorage.getItem(TOKEN_KEY) ?? '';
 }
 
+export function subscribeToAccessTokenChanges(listener: () => void): () => void {
+  if (typeof window === 'undefined') return () => {};
+  window.addEventListener(ACCESS_TOKEN_CHANGE_EVENT, listener);
+  return () => window.removeEventListener(ACCESS_TOKEN_CHANGE_EVENT, listener);
+}
+
 export function setAccessToken(token: string): void {
   if (typeof window === 'undefined') return;
   if (token) window.localStorage.setItem(TOKEN_KEY, token);
   else window.localStorage.removeItem(TOKEN_KEY);
+  window.dispatchEvent(new Event(ACCESS_TOKEN_CHANGE_EVENT));
 }
 
 type AuthRegisterResponse = { status: string; userId: number; recoveryKey: string };
@@ -207,7 +226,16 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   if (token) headers.set('authorization', `Bearer ${token}`);
   const url = apiUrl(path);
   const response = await fetch(url, { ...options, headers, cache: 'no-store' });
-  const data = parseJsonBody(await response.text(), response, url);
+  const responseText = await response.text();
+  if (
+    response.status === 401 &&
+    token &&
+    getAccessToken() === token &&
+    !AUTH_REQUESTS_THAT_MAY_REJECT_CREDENTIALS.has(path)
+  ) {
+    setAccessToken('');
+  }
+  const data = parseJsonBody(responseText, response, url);
   if (!response.ok) {
     throw new ApiError(apiErrorMessage(data, response), response.status);
   }
@@ -310,6 +338,9 @@ export async function downloadStorageObject(objectUuid: string): Promise<Blob> {
       else if (parsed) message = parsed;
     } catch {
       // Non-JSON error body (e.g. an HTML page) — keep the generic message.
+    }
+    if (response.status === 401 && token && getAccessToken() === token) {
+      setAccessToken('');
     }
     throw new ApiError(message, response.status);
   }
@@ -532,7 +563,11 @@ async function adminRequest<T>(path: string, options: RequestInit = {}): Promise
   if (token) headers.set('authorization', `Bearer ${token}`);
   const url = apiUrl(path);
   const response = await fetch(url, { ...options, headers, cache: 'no-store' });
-  const data = parseJsonBody(await response.text(), response, url);
+  const responseText = await response.text();
+  if (response.status === 401 && token && getAdminToken() === token) {
+    setAdminToken('');
+  }
+  const data = parseJsonBody(responseText, response, url);
   if (!response.ok) {
     throw new ApiError(apiErrorMessage(data, response), response.status);
   }

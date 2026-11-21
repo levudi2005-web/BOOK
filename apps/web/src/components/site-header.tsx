@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { primaryNav } from '@/lib/site';
-import { getAccessToken, logout } from '@/lib/api';
+import { getAccessToken, logout, subscribeToAccessTokenChanges } from '@/lib/api';
 import { Logo } from '@/components/logo';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { CloseIcon, MenuIcon, SearchIcon, UserIcon } from '@/components/icons';
@@ -20,6 +20,8 @@ export function SiteHeader() {
     setOpen(false);
     setSignedIn(Boolean(getAccessToken()));
   }, [pathname]);
+
+  useEffect(() => subscribeToAccessTokenChanges(() => setSignedIn(Boolean(getAccessToken()))), []);
 
   async function onLogout() {
     try {
