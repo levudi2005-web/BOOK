@@ -164,3 +164,130 @@
 .toolbar-btn:hover {
   background-color: rgb(var(--surface));
 }
+
+.tiptap {
+  overflow-wrap: anywhere;
+  padding: 1rem;
+  color: rgb(var(--foreground));
+}
+
+.tiptap > :first-child,
+.reader-rich-content > :first-child {
+  margin-top: 0;
+}
+
+.tiptap p,
+.reader-rich-content p,
+.pdf-preview-content p {
+  margin: 0.75rem 0;
+  line-height: 1.8;
+}
+
+.tiptap h1,
+.reader-rich-content h1,
+.pdf-preview-content h1 {
+  margin: 1.5rem 0 0.75rem;
+  font-size: 1.75em;
+  font-weight: 700;
+}
+
+.tiptap h2,
+.reader-rich-content h2,
+.pdf-preview-content h2 {
+  margin: 1.25rem 0 0.65rem;
+  font-size: 1.45em;
+  font-weight: 700;
+}
+
+.tiptap h3,
+.reader-rich-content h3,
+.pdf-preview-content h3 {
+  margin: 1rem 0 0.5rem;
+  font-size: 1.2em;
+  font-weight: 700;
+}
+
+.tiptap ul,
+.reader-rich-content ul,
+.pdf-preview-content ul {
+  list-style: disc;
+  padding-left: 1.5rem;
+}
+
+.tiptap ol,
+.reader-rich-content ol,
+.pdf-preview-content ol {
+  list-style: decimal;
+  padding-left: 1.5rem;
+}
+
+.tiptap blockquote,
+.reader-rich-content blockquote,
+.pdf-preview-content blockquote {
+  margin: 1rem 0;
+  border-left: 3px solid rgb(var(--accent));
+  padding-left: 1rem;
+  color: rgb(var(--muted-foreground));
+}
+
+.tiptap hr,
+.reader-rich-content hr,
+.pdf-preview-content hr {
+  margin: 1.5rem 0;
+  border-top: 1px solid rgb(var(--border));
+}
+
+.tiptap table,
+.reader-rich-content table,
+.pdf-preview-content table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.tiptap th,
+.tiptap td,
+.reader-rich-content th,
+.reader-rich-content td,
+.pdf-preview-content th,
+.pdf-preview-content td {
+  min-width: 4rem;
+  border: 1px solid rgb(var(--border));
+  padding: 0.5rem;
+  vertical-align: top;
+}
+
+.tiptap th,
+.reader-rich-content th,
+.pdf-preview-content th {
+  background-color: rgb(var(--surface));
+  font-weight: 700;
+}
+
+.tiptap a,
+.reader-rich-content a,
+.pdf-preview-content a {
+  color: rgb(var(--primary));
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.tiptap img,
+.reader-rich-content img,
+.pdf-preview-content img {
+  display: inline-block;
+  height: auto;
+  max-width: 100%;
+}
+
+.tiptap p.is-editor-empty:first-child::before {
+  float: left;
+  height: 0;
+  color: rgb(var(--muted-foreground));
+  content: attr(data-placeholder);
+  pointer-events: none;
+}
+
+.pdf-preview-content h1:first-child {
+  margin-top: 0;
+  text-align: center;
+}

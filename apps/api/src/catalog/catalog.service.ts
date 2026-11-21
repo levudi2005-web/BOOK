@@ -178,6 +178,23 @@ export class CatalogService {
     return this.storage.streamPublicObject(key);
   }
 
+  async getPublicChapterImage(slug: string, objectUuid: string) {
+    const references = await this.db.query<{ chapter_id: number }[]>(
+      `SELECT c.chapter_id
+       FROM books b
+       JOIN book_chapters c ON c.book_id = b.book_id
+       WHERE b.slug = ? AND ${publicStatusFilter}
+         AND c.status = 'published'
+         AND LOCATE(?, c.content) > 0
+       LIMIT 1`,
+      [slug, `data-storage-uuid="${objectUuid}"`],
+    );
+    if (references.length === 0) {
+      throw new NotFoundException('Không tìm thấy ảnh trong sách đã xuất bản.');
+    }
+    return this.storage.streamPublicObject(objectUuid);
+  }
+
   async getBookChapters(slug: string) {
     const books = await this.db.query<{ book_id: number }[]>(
       `SELECT b.book_id FROM books b WHERE b.slug = ? AND ${publicStatusFilter} LIMIT 1`,

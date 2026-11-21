@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import {
+  apiUrl,
   fetchBook,
   fetchBookChapters,
   getAccessToken,
@@ -12,6 +13,7 @@ import {
   type Chapter,
 } from '@/lib/api';
 import { ArrowLeftIcon } from '@/components/icons';
+import { normalizeRichContent, sanitizeRichHtml } from '@/lib/rich-content';
 
 type ReaderTheme = 'system' | 'sepia' | 'dark';
 
@@ -36,6 +38,7 @@ export function Reader() {
   const [showContents, setShowContents] = useState(false);
   const [readerTheme, setReaderTheme] = useState<ReaderTheme>('system');
   const [fontSize, setFontSize] = useState(18);
+  const [renderedContent, setRenderedContent] = useState('');
   const palette = readerPalettes[readerTheme];
 
   useEffect(() => {
@@ -110,6 +113,16 @@ export function Reader() {
       active = false;
     };
   }, [slug]);
+
+  useEffect(() => {
+    const safeHtml = sanitizeRichHtml(normalizeRichContent(chapters[current]?.content ?? ''));
+    const parsed = new DOMParser().parseFromString(safeHtml, 'text/html');
+    for (const image of parsed.querySelectorAll<HTMLImageElement>('img[data-storage-uuid]')) {
+      const uuid = image.getAttribute('data-storage-uuid');
+      if (uuid) image.src = apiUrl(`/books/${encodeURIComponent(slug)}/images/${encodeURIComponent(uuid)}`);
+    }
+    setRenderedContent(parsed.body.innerHTML);
+  }, [chapters, current, slug]);
 
   async function goTo(index: number) {
     const target = chapters[index];
@@ -255,11 +268,10 @@ export function Reader() {
               <article>
                 <h1 className="mb-6 font-serif text-2xl">{chapter.title}</h1>
                 <div
-                  className="whitespace-pre-wrap break-words leading-[1.8]"
+                  className="reader-rich-content break-words leading-[1.8]"
                   style={{ fontSize: `${fontSize}px` }}
-                >
-                  {chapter.content ?? ''}
-                </div>
+                  dangerouslySetInnerHTML={{ __html: renderedContent }}
+                />
               </article>
             ) : (
               <p className={`text-sm ${palette.muted}`}>Sách chưa có chương nào.</p>

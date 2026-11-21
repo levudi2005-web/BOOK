@@ -11,6 +11,14 @@ import { StorageService } from '../storage/storage.service.js';
 
 const COVER_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 const MAX_COVER_BYTES = 2 * 1024 * 1024; // 2 MiB
+const MAX_INLINE_IMAGE_BYTES = 10 * 1024 * 1024;
+
+function extractStorageImageUuids(content: string): string[] {
+  const uuids = new Set<string>();
+  const pattern = /data-storage-uuid=["']([0-9a-f-]{36})["']/gi;
+  for (const match of content.matchAll(pattern)) uuids.add(match[1]);
+  return [...uuids];
+}
 
 type BookRow = {
   book_id: number;
@@ -228,6 +236,7 @@ export class StudioService {
       throw new ForbiddenException('Tiêu đề chương không hợp lệ.');
     }
     const content = input.content ?? '';
+    await this.enableChapterImages(userId, content);
     const chapterUuid = randomUUID();
     const [{ nextNumber }] = await this.db.query<{ nextNumber: number }[]>(
       `SELECT COALESCE(MAX(chapter_number), 0) + 1 AS nextNumber FROM book_chapters WHERE book_id = ?`,
@@ -253,11 +262,25 @@ export class StudioService {
       throw new ForbiddenException('Tiêu đề chương không hợp lệ.');
     }
     const content = input.content !== undefined ? input.content : (chapter.content ?? '');
+    await this.enableChapterImages(userId, content);
     await this.db.query(
       `UPDATE book_chapters SET title = ?, content = ?, word_count = ? WHERE chapter_id = ?`,
       [title, content, countWords(content), chapter.chapter_id],
     );
     return { chapterUuid, wordCount: countWords(content) };
+  }
+
+  private async enableChapterImages(userId: number, content: string): Promise<void> {
+    for (const objectUuid of extractStorageImageUuids(content)) {
+      const object = await this.storage.getObject(userId, objectUuid);
+      if (object.status !== 'complete' || !COVER_MIME_TYPES.has(object.mimeType.toLowerCase())) {
+        throw new BadRequestException('Ảnh trong chương phải là ảnh JPEG, PNG, WebP hoặc GIF đã tải lên hoàn tất.');
+      }
+      if (object.sizeBytes > MAX_INLINE_IMAGE_BYTES) {
+        throw new BadRequestException('Ảnh trong chương không được vượt quá 10 MiB.');
+      }
+      await this.storage.setObjectVisibility(userId, objectUuid, true);
+    }
   }
 
   async deleteChapter(userId: number, chapterUuid: string) {

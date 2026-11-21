@@ -522,6 +522,60 @@ test('cover: public serve chỉ khi sách public + object public, ownership khi 
   assert.equal(removed.body.coverStorageKey, null);
 });
 
+test('chapter images: chỉ phục vụ khi ảnh được tham chiếu trong chương của sách public', async () => {
+  const created = await jsonRequest(
+    `${app.url}/studio/books`,
+    'POST',
+    { title: `E2E Chapter Image ${suffix}` },
+    auth(userA.accessToken),
+  );
+  assert.equal(created.status, 201);
+  const bookUuid = String(created.body.bookUuid);
+  const detail = await jsonRequest(
+    `${app.url}/studio/books/${bookUuid}`,
+    'GET',
+    undefined,
+    auth(userA.accessToken),
+  );
+  const slug = String(detail.body.slug);
+  const objectUuid = await uploadImage(userA.accessToken, 'image/png', 'chapter-image.png');
+  const content = `<p>Minh họa chương</p><img src="" data-storage-uuid="${objectUuid}" alt="Minh họa" />`;
+  const chapter = await jsonRequest(
+    `${app.url}/studio/books/${bookUuid}/chapters`,
+    'POST',
+    { title: 'Chương có ảnh', content },
+    auth(userA.accessToken),
+  );
+  assert.equal(chapter.status, 201);
+
+  const beforePublish = await fetch(`${app.url}/books/${slug}/images/${objectUuid}`);
+  assert.equal(beforePublish.status, 404);
+
+  const published = await jsonRequest(
+    `${app.url}/studio/books/${bookUuid}/publish`,
+    'POST',
+    undefined,
+    auth(userA.accessToken),
+  );
+  assert.equal(published.status, 201);
+  const publicImage = await fetch(`${app.url}/books/${slug}/images/${objectUuid}`);
+  assert.equal(publicImage.status, 200);
+  assert.equal(publicImage.headers.get('content-type'), 'image/png');
+  assert.deepEqual(Buffer.from(await publicImage.arrayBuffer()), Buffer.from(COVER_PNG_BASE64, 'base64'));
+
+  const unrelatedBook = await fetch(`${app.url}/books/not-the-image-book/images/${objectUuid}`);
+  assert.equal(unrelatedBook.status, 404);
+
+  await jsonRequest(
+    `${app.url}/studio/books/${bookUuid}/unpublish`,
+    'POST',
+    undefined,
+    auth(userA.accessToken),
+  );
+  const afterUnpublish = await fetch(`${app.url}/books/${slug}/images/${objectUuid}`);
+  assert.equal(afterUnpublish.status, 404);
+});
+
 test('comments: sửa/xoá chỉ chủ sở hữu, danh sách phản ánh thay đổi', async () => {
   const created = await jsonRequest(`${app.url}/studio/books`, 'POST', { title: `E2E Comment ${suffix}` }, auth(userA.accessToken));
   const bookUuid = String(created.body.bookUuid);

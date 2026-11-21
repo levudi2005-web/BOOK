@@ -24,6 +24,21 @@ export class CatalogController {
     return new StreamableFile(Readable.from(stream));
   }
 
+  @Get('books/:slug/images/:objectUuid')
+  async getBookImage(
+    @Param('slug') slug: string,
+    @Param('objectUuid') objectUuid: string,
+    @Res({ passthrough: true }) res: { setHeader(name: string, value: string): void },
+  ) {
+    const { dto, stream } = await this.catalog.getPublicChapterImage(slug, objectUuid);
+    res.setHeader('Content-Type', dto.mimeType);
+    res.setHeader('Content-Length', String(dto.sizeBytes));
+    res.setHeader('Content-Disposition', `inline; filename="${dto.filename.replaceAll('"', '')}"`);
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    return new StreamableFile(Readable.from(stream));
+  }
+
   @Get('books/:slug')
   getBook(@Param('slug') slug: string) {
     return this.catalog.getBook(slug);

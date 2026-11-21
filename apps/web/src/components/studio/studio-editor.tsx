@@ -12,12 +12,15 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/toast';
 import { cn } from '@/lib/utils';
 import { ArrowLeftIcon, BookIcon, ChevronDownIcon, ClockIcon, CloseIcon } from '@/components/icons';
+import { PdfExport } from '@/components/studio/pdf-export';
+import { RichTextEditor } from '@/components/studio/rich-text-editor';
 import {
   completeUpload,
   createChapter,
   deleteChapter,
   deleteStudioBook,
   downloadStorageObject,
+  getMyProfile,
   getStudioBook,
   initUpload,
   isAuthError,
@@ -114,7 +117,10 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
   const [selectedCategories, setSelectedCategories] = useState<number[]>([]);
   const [tagsInput, setTagsInput] = useState('');
   const [taxonomySaving, setTaxonomySaving] = useState(false);
+  const [authorName, setAuthorName] = useState('');
   const savingRef = useRef(false);
+  const saveQueuedRef = useRef(false);
+  const chapterRevisionRef = useRef(0);
   const persistRef = useRef<(silent: boolean) => Promise<void>>(async () => {});
 
   const applyBook = useCallback((next: StudioBookDetail) => {
@@ -163,6 +169,20 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
   }, []);
 
   useEffect(() => {
+    let active = true;
+    getMyProfile()
+      .then((profile) => {
+        if (active) setAuthorName(profile.profile.displayName.trim() || profile.username);
+      })
+      .catch(() => {
+        if (active) setAuthorName('');
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!book) return;
     setSelectedCategories(book.categories.map((category) => category.categoryId));
     setTagsInput(book.tags.join(', '));
@@ -204,6 +224,7 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
     const uuid = selectedChapter?.chapterUuid ?? '';
     if (editingChapterUuid.current === uuid) return;
     editingChapterUuid.current = uuid;
+    chapterRevisionRef.current += 1;
     setChapterTitle(selectedChapter?.title ?? '');
     setChapterContent(selectedChapter?.content ?? '');
     setChapterState('idle');
@@ -349,15 +370,20 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
 
   async function persistChapter(silent: boolean) {
     if (!selectedChapter) return;
-    if (savingRef.current) return;
+    if (savingRef.current) {
+      saveQueuedRef.current = true;
+      return;
+    }
     const error = validateChapter({ title: chapterTitle, content: chapterContent });
     if (error) {
       if (!silent) toast(error, 'error');
       return;
     }
     savingRef.current = true;
+    saveQueuedRef.current = false;
     setChapterState('saving');
     const chapterUuid = selectedChapter.chapterUuid;
+    const revision = chapterRevisionRef.current;
     const nextTitle = chapterTitle.trim();
     const nextContent = chapterContent;
     try {
@@ -374,20 +400,35 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
             }
           : current,
       );
-      setChapterState('saved');
-      setChapterSavedAt(new Date());
+      if (editingChapterUuid.current === chapterUuid && selectedUuid === chapterUuid) {
+        if (chapterRevisionRef.current === revision) {
+          setChapterState('saved');
+          setChapterSavedAt(new Date());
+        } else {
+          saveQueuedRef.current = true;
+          setChapterState('dirty');
+        }
+      }
       if (!silent) toast('Đã lưu chương.', 'success');
     } catch (error) {
-      setChapterState('error');
+      saveQueuedRef.current = false;
+      if (editingChapterUuid.current === chapterUuid && selectedUuid === chapterUuid) {
+        setChapterState('error');
+      }
       toast(error instanceof Error ? error.message : 'Không thể lưu chương.', 'error');
     } finally {
       savingRef.current = false;
+      if (saveQueuedRef.current) {
+        saveQueuedRef.current = false;
+        window.setTimeout(() => void persistRef.current(true), 0);
+      }
     }
   }
 
   function selectChapter(uuid: string) {
     if (uuid === selectedUuid) return;
     if (chapterDirty && !window.confirm('Chương có thay đổi chưa lưu. Bỏ thay đổi và chuyển chương?')) return;
+    chapterRevisionRef.current += 1;
     setSelectedUuid(uuid);
     setChapterState('idle');
     setChapterSavedAt(null);
@@ -657,6 +698,11 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
 
   const published = book.status === 'published';
   const totalWords = chapters.reduce((sum, chapter) => sum + Number(chapter.wordCount ?? 0), 0);
+  const pdfChapters = chapters.map((chapter) => ({
+    chapterUuid: chapter.chapterUuid,
+    title: chapter.chapterUuid === selectedUuid ? chapterTitle : chapter.title,
+    content: chapter.chapterUuid === selectedUuid ? chapterContent : chapter.content ?? '',
+  }));
 
   return (
     <div className="container-site py-10">
@@ -703,6 +749,17 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
           </Button>
         </div>
       </div>
+
+      {chapters.length > 0 ? (
+        <div className="mt-4 flex justify-end">
+          <PdfExport
+            title={book.title}
+            author={authorName}
+            chapters={pdfChapters}
+            selectedChapterUuid={selectedUuid}
+          />
+        </div>
+      ) : null}
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="space-y-6">
@@ -964,17 +1021,22 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
                     value={chapterTitle}
                     maxLength={300}
                     required
-                    onChange={(event) => setChapterTitle(event.target.value)}
+                    onChange={(event) => {
+                      chapterRevisionRef.current += 1;
+                      setChapterTitle(event.target.value);
+                    }}
                   />
                 </div>
                 <div>
-                  <Label htmlFor="chapter-content">Nội dung</Label>
-                  <Textarea
+                  <Label htmlFor="chapter-content">Nội dung chương</Label>
+                  <RichTextEditor
                     id="chapter-content"
-                    value={chapterContent}
-                    className="min-h-[20rem] font-mono text-[13px] leading-relaxed"
-                    placeholder="Nội dung chương (hỗ trợ HTML cơ bản)…"
-                    onChange={(event) => setChapterContent(event.target.value)}
+                    content={chapterContent}
+                    onChange={(content) => {
+                      chapterRevisionRef.current += 1;
+                      setChapterContent(content);
+                    }}
+                    placeholder="Bắt đầu viết nội dung chương…"
                   />
                 </div>
                 <div className="flex flex-wrap items-center justify-between gap-2">
