@@ -24,7 +24,7 @@ const config: Config = {
       },
       fontFamily: {
         sans: [
-          'Inter',
+          'var(--font-sans)',
           'ui-sans-serif',
           'system-ui',
           '-apple-system',
@@ -35,7 +35,16 @@ const config: Config = {
           'Arial',
           'sans-serif',
         ],
-        serif: ['Georgia', 'Cambria', 'Times New Roman', 'Noto Serif', 'serif'],
+        serif: ['var(--font-serif)', 'Georgia', 'Cambria', 'Times New Roman', 'Noto Serif', 'serif'],
+        mono: [
+          'var(--font-mono)',
+          'ui-monospace',
+          'SFMono-Regular',
+          'Menlo',
+          'Consolas',
+          'Liberation Mono',
+          'monospace',
+        ],
       },
       borderRadius: {
         xl: '0.875rem',

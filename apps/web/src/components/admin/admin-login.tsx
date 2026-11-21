@@ -46,8 +46,8 @@ export function AdminLogin() {
 
         <form onSubmit={onSubmit} className="space-y-4">
           <div>
-            <Label htmlFor="admin-email">Email</Label>
-            <Input id="admin-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+            <Label htmlFor="admin-email">Email hoặc tên đăng nhập</Label>
+            <Input id="admin-email" type="text" value={email} onChange={(e) => setEmail(e.target.value)} required />
           </div>
           <div>
             <Label htmlFor="admin-password">Mật khẩu</Label>

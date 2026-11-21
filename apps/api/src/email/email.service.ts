@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { MailService } from '../mail/mail.service.js';
 
 export type EmailTemplate =
   | 'registration_verification'
@@ -15,19 +16,24 @@ export type EmailParams = {
 
 export type EmailResult = {
   delivered: boolean;
-  reason: 'smtp_not_configured' | 'smtp_transport_not_implemented' | 'sent';
+  reason: 'sent' | 'smtp-not-configured' | 'transport-unavailable' | 'send-failed';
 };
 
+/**
+ * Template helper trên **một** transport duy nhất là `MailService`.
+ *
+ * Trước đây lớp này giả lập kết quả gửi mà không có transport; nay nó chuyển
+ * tiếp sang SMTP adapter (hoặc memory adapter trong test) và trả về đúng
+ * trạng thái giao nhận. Không có credential nào bị hardcode.
+ */
 @Injectable()
 export class EmailService {
-  async send(_template: EmailTemplate, _params: EmailParams): Promise<EmailResult> {
-    const host = process.env.SMTP_HOST ?? '';
-    if (!host) {
-      return { delivered: false, reason: 'smtp_not_configured' };
-    }
-    // Transport (nodemailer) sẽ được bổ sung khi SMTP được cấu hình thật.
-    // Không lưu raw token vào log; email chỉ gửi qua transport bảo mật.
-    return { delivered: false, reason: 'smtp_transport_not_implemented' };
+  constructor(private readonly mail: MailService) {}
+
+  async send(_template: EmailTemplate, params: EmailParams): Promise<EmailResult> {
+    const delivery = await this.mail.send({ to: params.to, subject: params.subject, text: params.text });
+    if (delivery.delivered) return { delivered: true, reason: 'sent' };
+    return { delivered: false, reason: delivery.reason ?? 'send-failed' };
   }
 
   buildVerificationEmail(to: string, link: string): EmailParams {

@@ -2,20 +2,35 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { primaryNav } from '@/lib/site';
+import { getAccessToken, logout } from '@/lib/api';
 import { Logo } from '@/components/logo';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { CloseIcon, MenuIcon, SearchIcon, UserIcon } from '@/components/icons';
 
 export function SiteHeader() {
   const pathname = usePathname();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [signedIn, setSignedIn] = useState(false);
 
   useEffect(() => {
     setOpen(false);
+    setSignedIn(Boolean(getAccessToken()));
   }, [pathname]);
+
+  async function onLogout() {
+    try {
+      await logout();
+    } catch {
+      // Local token is cleared by `logout()` regardless of the server response.
+    }
+    setSignedIn(false);
+    router.push('/');
+    router.refresh();
+  }
 
   useEffect(() => {
     document.body.style.overflow = open ? 'hidden' : '';
@@ -71,13 +86,24 @@ export function SiteHeader() {
             <SearchIcon className="h-[18px] w-[18px]" />
           </Link>
           <ThemeToggle />
-          <Link
-            href="/auth/login"
-            className="focus-ring hidden h-10 items-center gap-2 rounded-full px-4 text-sm font-medium text-foreground transition-colors hover:bg-surface sm:inline-flex"
-          >
-            <UserIcon className="h-4 w-4" />
-            Đăng nhập
-          </Link>
+          {signedIn ? (
+            <button
+              type="button"
+              onClick={() => void onLogout()}
+              className="focus-ring hidden h-10 items-center gap-2 rounded-full px-4 text-sm font-medium text-foreground transition-colors hover:bg-surface sm:inline-flex"
+            >
+              <UserIcon className="h-4 w-4" />
+              Đăng xuất
+            </button>
+          ) : (
+            <Link
+              href="/auth/login"
+              className="focus-ring hidden h-10 items-center gap-2 rounded-full px-4 text-sm font-medium text-foreground transition-colors hover:bg-surface sm:inline-flex"
+            >
+              <UserIcon className="h-4 w-4" />
+              Đăng nhập
+            </Link>
+          )}
         </div>
       </div>
 
@@ -107,12 +133,22 @@ export function SiteHeader() {
                 {item.label}
               </Link>
             ))}
-            <Link
-              href="/auth/login"
-              className="mt-2 block rounded-xl bg-primary px-4 py-3 text-center text-base font-medium text-primary-foreground"
-            >
-              Đăng nhập
-            </Link>
+            {signedIn ? (
+              <button
+                type="button"
+                onClick={() => void onLogout()}
+                className="mt-2 block w-full rounded-xl bg-primary px-4 py-3 text-center text-base font-medium text-primary-foreground"
+              >
+                Đăng xuất
+              </button>
+            ) : (
+              <Link
+                href="/auth/login"
+                className="mt-2 block rounded-xl bg-primary px-4 py-3 text-center text-base font-medium text-primary-foreground"
+              >
+                Đăng nhập
+              </Link>
+            )}
           </nav>
         </div>
       ) : null}

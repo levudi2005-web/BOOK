@@ -1,10 +1,4 @@
-import {
-  CanActivate,
-  ExecutionContext,
-  HttpException,
-  HttpStatus,
-  Injectable,
-} from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { extractBearerToken } from '../common/http.util.js';
 import { AdminService } from './admin.service.js';
 

@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
-import type { ApiBook } from '@/lib/api';
+import { publicCoverUrl, type ApiBook } from '@/lib/api';
 import { StarIcon } from '@/components/icons';
 
 const coverPalette = ['#173F35', '#315C4C', '#6B4F2A', '#4A3B52', '#7A4A3A', '#3A4A5C', '#2F5C54', '#5C523A'];
@@ -23,10 +23,19 @@ export function BookCard({ book, view = 'grid' }: { book: ApiBook; view?: 'grid'
         className="focus-ring group flex gap-4 rounded-2xl border border-border bg-card p-4 shadow-soft transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lift"
       >
         <div
-          className="flex h-24 w-16 shrink-0 items-center justify-center rounded-md px-2 text-center"
+          className="relative flex h-24 w-16 shrink-0 items-center justify-center overflow-hidden rounded-md px-2 text-center"
           style={{ backgroundColor: coverTone(book.slug) }}
         >
-          <span className="line-clamp-3 font-serif text-xs leading-tight text-white/90">{book.title}</span>
+          {book.cover_storage_key ? (
+            <img
+              src={publicCoverUrl(book.slug)}
+              alt={`Bìa sách ${book.title}`}
+              loading="lazy"
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+          ) : (
+            <span className="line-clamp-3 font-serif text-xs leading-tight text-white/90">{book.title}</span>
+          )}
         </div>
         <div className="min-w-0 flex-1">
           <h3 className="truncate font-serif text-lg text-foreground group-hover:text-primary">
@@ -67,6 +76,14 @@ export function BookCard({ book, view = 'grid' }: { book: ApiBook; view?: 'grid'
             <p className="mt-2 text-xs text-white/70 line-clamp-2">{book.subtitle}</p>
           ) : null}
         </div>
+        {book.cover_storage_key ? (
+          <img
+            src={publicCoverUrl(book.slug)}
+            alt={`Bìa sách ${book.title}`}
+            loading="lazy"
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+        ) : null}
         <span className="absolute bottom-3 left-4 text-[10px] uppercase tracking-[0.2em] text-white/60">
           BOOKFORFREEDOM
         </span>

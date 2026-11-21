@@ -8,8 +8,13 @@ import {
   addComment,
   addReview,
   addToLibrary,
+  deleteComment,
+  getAccessToken,
+  getMyProfile,
   listComments,
   listReviews,
+  publicCoverUrl,
+  updateComment,
   type BookDetail as BookDetailData,
 } from '@/lib/api';
 import { PageHeader } from '@/components/page-header';
@@ -29,7 +34,12 @@ export function BookDetail() {
   const [book, setBook] = useState<BookDetailData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [comments, setComments] = useState<{ comment_uuid: string; body: string; username: string; created_at: string }[]>([]);
+  const [comments, setComments] = useState<{ comment_uuid: string; body: string; username: string; user_uuid: string; created_at: string }[]>([]);
+  const [myUuid, setMyUuid] = useState('');
+  const [editingUuid, setEditingUuid] = useState('');
+  const [editingBody, setEditingBody] = useState('');
+  const [deletingUuid, setDeletingUuid] = useState('');
+  const [commentBusy, setCommentBusy] = useState(false);
   const [reviews, setReviews] = useState<{ data: { review_uuid: string; rating: number; title: string | null; body: string | null; username: string }[]; meta: { average: number; count: number } } | null>(null);
   const [commentText, setCommentText] = useState('');
   const [newRating, setNewRating] = useState(5);
@@ -41,6 +51,15 @@ export function BookDetail() {
       setReviews(r);
     } catch {
       // social data is best-effort on the public page
+    }
+    // Chỉ gọi /me khi có token: dùng để xác định quyền sửa/xoá bình luận.
+    if (getAccessToken()) {
+      try {
+        const me = await getMyProfile();
+        setMyUuid(me.userUuid);
+      } catch {
+        setMyUuid('');
+      }
     }
   }
 
@@ -82,6 +101,42 @@ export function BookDetail() {
       await loadSocial();
     } catch (error) {
       toast(error instanceof Error ? error.message : 'Không thể gửi bình luận.', 'default');
+    }
+  }
+
+  async function onSaveEdit(commentUuid: string) {
+    const text = editingBody.trim();
+    if (!text) {
+      toast('Bình luận không được để trống.', 'default');
+      return;
+    }
+    setCommentBusy(true);
+    try {
+      await updateComment(commentUuid, text);
+      setComments((current) =>
+        current.map((comment) => (comment.comment_uuid === commentUuid ? { ...comment, body: text } : comment)),
+      );
+      setEditingUuid('');
+      setEditingBody('');
+      toast('Đã cập nhật bình luận.', 'default');
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Không thể cập nhật bình luận.', 'default');
+    } finally {
+      setCommentBusy(false);
+    }
+  }
+
+  async function onDeleteComment(commentUuid: string) {
+    if (!window.confirm('Xoá bình luận này? Hành động không thể hoàn tác.')) return;
+    setDeletingUuid(commentUuid);
+    try {
+      await deleteComment(commentUuid);
+      setComments((current) => current.filter((comment) => comment.comment_uuid !== commentUuid));
+      toast('Đã xoá bình luận.', 'default');
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Không thể xoá bình luận.', 'default');
+    } finally {
+      setDeletingUuid('');
     }
   }
 
@@ -143,11 +198,19 @@ export function BookDetail() {
       <div className="container-site py-8">
         <div className="grid gap-8 lg:grid-cols-[16rem_1fr]">
           <div className="mx-auto w-full max-w-[16rem]">
-            <div className="flex aspect-[3/4] items-center justify-center rounded-2xl bg-primary p-8 text-center shadow-lift">
-              <div>
-                <p className="font-serif text-xl leading-snug text-white line-clamp-4">{book.title}</p>
-                {book.subtitle ? <p className="mt-2 text-xs text-white/70 line-clamp-2">{book.subtitle}</p> : null}
-              </div>
+            <div className="relative flex aspect-[3/4] items-center justify-center overflow-hidden rounded-2xl bg-primary p-8 text-center shadow-lift">
+              {book.cover_storage_key ? (
+                <img
+                  src={publicCoverUrl(book.slug)}
+                  alt={`Bìa sách ${book.title}`}
+                  className="absolute inset-0 h-full w-full object-cover"
+                />
+              ) : (
+                <div>
+                  <p className="font-serif text-xl leading-snug text-white line-clamp-4">{book.title}</p>
+                  {book.subtitle ? <p className="mt-2 text-xs text-white/70 line-clamp-2">{book.subtitle}</p> : null}
+                </div>
+              )}
             </div>
           </div>
 
@@ -218,12 +281,69 @@ export function BookDetail() {
           <Card className="p-6">
             <h2 className="mb-4 font-serif text-xl text-foreground">Bình luận</h2>
             <div className="space-y-3">
-              {comments.slice(0, 10).map((c) => (
-                <div key={c.comment_uuid} className="rounded-xl bg-surface/50 p-3 text-sm">
-                  <p className="font-medium text-foreground">{c.username}</p>
-                  <p className="mt-1 text-muted-foreground">{c.body}</p>
-                </div>
-              ))}
+              {comments.slice(0, 10).map((c) => {
+                const mine = Boolean(myUuid && c.user_uuid === myUuid);
+                const isEditing = editingUuid === c.comment_uuid;
+                return (
+                  <div key={c.comment_uuid} className="rounded-xl bg-surface/50 p-3 text-sm">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="font-medium text-foreground">{c.username}</p>
+                      {mine ? (
+                        <div className="flex shrink-0 gap-3 text-xs">
+                          {isEditing ? null : (
+                            <button
+                              type="button"
+                              className="text-primary hover:underline"
+                              onClick={() => {
+                                setEditingUuid(c.comment_uuid);
+                                setEditingBody(c.body);
+                              }}
+                            >
+                              Sửa
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="text-destructive hover:underline disabled:opacity-60"
+                            disabled={commentBusy || deletingUuid === c.comment_uuid}
+                            onClick={() => void onDeleteComment(c.comment_uuid)}
+                          >
+                            {deletingUuid === c.comment_uuid ? 'Đang xoá…' : 'Xoá'}
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                    {isEditing ? (
+                      <div className="mt-2 space-y-2">
+                        <Textarea
+                          value={editingBody}
+                          maxLength={5000}
+                          className="min-h-16 bg-card"
+                          onChange={(event) => setEditingBody(event.target.value)}
+                        />
+                        <div className="flex gap-2">
+                          <Button size="sm" disabled={commentBusy} onClick={() => void onSaveEdit(c.comment_uuid)}>
+                            {commentBusy ? 'Đang lưu…' : 'Lưu'}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={commentBusy}
+                            onClick={() => {
+                              setEditingUuid('');
+                              setEditingBody('');
+                            }}
+                          >
+                            Huỷ
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="mt-1 whitespace-pre-line text-muted-foreground">{c.body}</p>
+                    )}
+                  </div>
+                );
+              })}
               {comments.length === 0 ? <p className="text-sm text-muted-foreground">Chưa có bình luận.</p> : null}
             </div>
             <div className="mt-4 flex gap-2">

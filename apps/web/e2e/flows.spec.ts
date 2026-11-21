@@ -1,0 +1,344 @@
+import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
+
+/**
+ * E2E chạy trên stack test riêng (MariaDB :3308 / Meili :7701 / API :3200 / web :3100).
+ * Không dùng tài khoản, DB hay storage production nào.
+ */
+const API = process.env.E2E_API_URL ?? 'http://127.0.0.1:3200';
+const TOKEN_KEY = 'bff_access_token';
+
+const COVER_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64',
+);
+
+function unique(prefix: string): string {
+  return `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+}
+
+type JsonResult = { status: number; body: Record<string, unknown> };
+
+async function json(
+  request: APIRequestContext,
+  path: string,
+  method: string,
+  body?: unknown,
+  token?: string,
+): Promise<JsonResult> {
+  const response = await request.fetch(`${API}${path}`, {
+    method,
+    headers: {
+      'content-type': 'application/json',
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    },
+    data: body === undefined ? undefined : JSON.stringify(body),
+  });
+  let parsed: Record<string, unknown> = {};
+  try {
+    parsed = (await response.json()) as Record<string, unknown>;
+  } catch {
+    parsed = {};
+  }
+  return { status: response.status(), body: parsed };
+}
+
+async function seedAuthor(request: APIRequestContext) {
+  const username = unique('e2e');
+  const password = 'password123';
+  const registered = await json(request, '/auth/register', 'POST', {
+    username,
+    email: `${username}@example.com`,
+    password,
+  });
+  expect(registered.status).toBe(201);
+
+  const login = await json(request, '/auth/login', 'POST', { identifier: username, password });
+  expect(login.status).toBe(200);
+  const token = String(login.body.accessToken);
+
+  const title = `E2E Studio ${username}`;
+  const book = await json(request, '/studio/books', 'POST', { title }, token);
+  expect(book.status).toBe(201);
+  const bookUuid = String(book.body.bookUuid);
+
+  const chapter = await json(
+    request,
+    `/studio/books/${bookUuid}/chapters`,
+    'POST',
+    { title: 'Chương 1', content: 'Nội dung ban đầu' },
+    token,
+  );
+  expect(chapter.status).toBe(201);
+
+  return { username, password, token, title, bookUuid };
+}
+
+async function signIn(page: Page, token: string): Promise<void> {
+  await page.addInitScript(
+    ([key, value]) => window.localStorage.setItem(key as string, value as string),
+    [TOKEN_KEY, token] as const,
+  );
+}
+const ADMIN = {
+  username: process.env.E2E_ADMIN_USER ?? 'e2e_admin',
+  password: process.env.E2E_ADMIN_PASSWORD ?? 'E2eAdminPass123!',
+};
+
+async function uiLogin(page: Page, identifier: string, password: string): Promise<void> {
+  await page.goto('/auth/login');
+  await page.locator('#auth-email').fill(identifier);
+  await page.locator('#auth-password').fill(password);
+  await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click();
+  await expect(page).toHaveURL(/\/library/, { timeout: 30_000 });
+}
+
+async function uiLogout(page: Page): Promise<void> {
+  const logoutButton = page.getByRole('button', { name: 'Đăng xuất' }).first();
+  if (!(await logoutButton.isVisible().catch(() => false))) {
+    await page.getByRole('button', { name: 'Mở menu' }).click();
+  }
+  await page.getByRole('button', { name: 'Đăng xuất' }).first().click();
+  await page.waitForFunction((key) => window.localStorage.getItem(key) === null, TOKEN_KEY, {
+    timeout: 20_000,
+  });
+}
+
+async function seedBookWithTwoChapters(request: APIRequestContext) {
+  const author = await seedAuthor(request);
+  const second = await json(
+    request,
+    `/studio/books/${author.bookUuid}/chapters`,
+    'POST',
+    { title: 'Chương 2', content: 'Nội dung chương hai' },
+    author.token,
+  );
+  expect(second.status).toBe(201);
+  return { ...author, secondChapterUuid: String(second.body.chapterUuid) };
+}
+
+
+
+test('auth: hồ sơ thật khi có token, đăng xuất xoá phiên', async ({ page, request }) => {
+  const { username, token } = await seedAuthor(request);
+  await signIn(page, token);
+
+  await page.goto('/profile');
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(username);
+
+  await page.getByText('Đăng xuất').first().click();
+  await expect(page.getByText('Đăng nhập để xem hồ sơ')).toBeVisible();
+  expect(await page.evaluate((key) => window.localStorage.getItem(key), TOKEN_KEY)).toBeNull();
+});
+
+test('studio: autosave chương, tải ảnh bìa, publish hiển thị công khai', async ({ page, request }) => {
+  const { token, bookUuid } = await seedAuthor(request);
+  await signIn(page, token);
+
+  await page.goto(`/write/${bookUuid}`);
+  const chapterTitle = page.getByText('Chương 1').first();
+  if (await chapterTitle.isVisible().catch(() => false)) {
+    await chapterTitle.click();
+  }
+
+  const content = page.locator('#chapter-content');
+  await expect(content).toBeVisible();
+  await content.fill('Nội dung đã sửa bằng E2E');
+  await expect(page.getByText(/Đã lưu lúc/).first()).toBeVisible({ timeout: 20_000 });
+
+  await page.reload();
+  await expect(page.locator('#chapter-content')).toHaveValue(/Nội dung đã sửa bằng E2E/, { timeout: 20_000 });
+
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'cover.png',
+    mimeType: 'image/png',
+    buffer: COVER_PNG,
+  });
+  await expect(page.getByAltText('Ảnh bìa hiện tại')).toBeVisible({ timeout: 30_000 });
+
+  const published = await json(request, `/studio/books/${bookUuid}/publish`, 'POST', undefined, token);
+  expect(published.status).toBe(201);
+  const slug = String(published.body.slug);
+
+  await page.goto(`/books/${slug}`);
+  await expect(page.getByAltText(/Bìa sách/)).toBeVisible({ timeout: 20_000 });
+});
+
+test('comments: thêm, sửa, xoá bình luận của chính mình', async ({ page, request }) => {
+  const { token, bookUuid } = await seedAuthor(request);
+  const published = await json(request, `/studio/books/${bookUuid}/publish`, 'POST', undefined, token);
+  const slug = String(published.body.slug);
+
+  await signIn(page, token);
+  await page.goto(`/books/${slug}`);
+
+  await page.getByPlaceholder('Viết bình luận…').fill('Bình luận E2E');
+  await page.getByRole('button', { name: 'Gửi' }).click();
+  await expect(page.getByText('Bình luận E2E')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Sửa' }).first().click();
+  await page.locator('textarea').last().fill('Bình luận đã sửa');
+  await page.getByRole('button', { name: 'Lưu' }).click();
+  await expect(page.getByText('Bình luận đã sửa')).toBeVisible();
+
+  page.once('dialog', (dialog) => void dialog.accept());
+  await page.getByRole('button', { name: 'Xoá' }).first().click();
+  await expect(page.getByText('Bình luận đã sửa')).toHaveCount(0);
+});
+
+test('catalog + search: sách đã publish xuất hiện, trang search phản hồi', async ({ page, request }) => {
+  const { token, bookUuid, title } = await seedAuthor(request);
+  await json(request, `/studio/books/${bookUuid}/publish`, 'POST', undefined, token);
+
+  await page.goto(`/discover?q=${encodeURIComponent(title)}`);
+  await expect(page.getByText(title).first()).toBeVisible({ timeout: 20_000 });
+
+  await page.goto(`/search?q=${encodeURIComponent(title)}`);
+  await expect(page.getByRole('heading').first()).toBeVisible();
+});
+
+test('history: trang lịch sử đọc hiển thị trạng thái rỗng hoặc dữ liệu', async ({ page, request }) => {
+  const { token } = await seedAuthor(request);
+  await signIn(page, token);
+  await page.goto('/history');
+  await expect(page.getByRole('heading', { name: 'Lịch sử đọc' })).toBeVisible();
+});
+
+test('responsive: không tràn ngang trên thiết bị nhỏ', async ({ page }) => {
+  await page.goto('/discover');
+  await expect(page.locator('main, body').first()).toBeVisible();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(2);
+});
+
+test('auth UI: đăng nhập bằng username, giữ phiên sau reload và đăng xuất', async ({ page, request }) => {
+  const { username, password } = await seedAuthor(request);
+  await uiLogin(page, username, password);
+  await expect(page.getByText('Kệ sách của tôi')).toBeVisible();
+
+  await page.goto('/profile');
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(username);
+
+  await page.reload();
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(username);
+
+  await uiLogout(page);
+  expect(await page.evaluate((key) => window.localStorage.getItem(key), TOKEN_KEY)).toBeNull();
+
+  await page.goto('/profile');
+  await expect(page.getByText('Đăng nhập để xem hồ sơ')).toBeVisible();
+});
+
+test('studio UI: tạo sách, sửa thông tin, chương, autosave, reorder, publish/unpublish', async ({ page, request }) => {
+  const { username, password, token } = await seedAuthor(request);
+  await uiLogin(page, username, password);
+
+  await page.goto('/write');
+  const title = `E2E UI Studio ${Date.now().toString(36)}`;
+  await page.locator('#new-title').fill(title);
+  await page.locator('#new-subtitle').fill('Phụ đề E2E');
+  await page.getByRole('button', { name: 'Tạo bản thảo' }).click();
+  await expect(page.getByText(title).first()).toBeVisible({ timeout: 20_000 });
+
+  const books = await json(request, '/studio/books', 'GET', undefined, token);
+  const created = (books.body.data as { bookUuid: string; title: string }[]).find((book) => book.title === title);
+  expect(created?.bookUuid).toBeTruthy();
+  const bookUuid = String(created?.bookUuid);
+
+  await page.goto(`/write/${bookUuid}`);
+  await page.locator('#studio-title').fill(`${title} (sửa)`);
+  await page.getByRole('button', { name: 'Lưu thông tin' }).click();
+  await expect(page.getByText('Đã lưu thông tin sách.')).toBeVisible({ timeout: 20_000 });
+
+  await page.getByText('1. Chương 1').click();
+  await expect(page.locator('#chapter-content')).toBeVisible();
+  await page.locator('#chapter-content').fill('Nội dung chương một đã sửa bằng E2E');
+  await expect(page.getByText(/Đã lưu lúc/).first()).toBeVisible({ timeout: 25_000 });
+
+  await page.getByPlaceholder('Chương 2').fill('Chương 2');
+  await page.getByRole('button', { name: 'Thêm chương' }).click();
+  await expect(page.getByText('2. Chương 2')).toBeVisible({ timeout: 20_000 });
+  await page.locator('#chapter-content').fill('Nội dung chương hai bằng E2E');
+  await expect(page.getByText(/Đã lưu lúc/).first()).toBeVisible({ timeout: 25_000 });
+
+  await page.getByRole('button', { name: 'Đưa "Chương 1" xuống' }).click();
+  await expect(page.locator('ol li').first()).toContainText('Chương 2', { timeout: 20_000 });
+
+  await page.getByRole('button', { name: 'Xuất bản', exact: true }).click();
+  await expect(page.getByText('Đã xuất bản').first()).toBeVisible({ timeout: 25_000 });
+
+  const publishedBooks = await json(request, `/books?q=${encodeURIComponent(`${title} (sửa)`)}`, 'GET');
+  const publishedRow = (publishedBooks.body.data as { slug: string; title: string }[]).find((book) => book.title === `${title} (sửa)`);
+  expect(publishedRow?.slug).toBeTruthy();
+
+  await page.getByRole('button', { name: 'Gỡ xuất bản' }).click();
+  await expect(page.getByText('Bản nháp').first()).toBeVisible({ timeout: 25_000 });
+});
+
+test('reader + library + history: đọc sách, lưu thư viện và deep-link đúng chương', async ({ page, request }) => {
+  const { token, bookUuid, title } = await seedBookWithTwoChapters(request);
+  const published = await json(request, `/studio/books/${bookUuid}/publish`, 'POST', undefined, token);
+  expect(published.status).toBe(201);
+  const slug = String(published.body.slug);
+
+  const chapters = await json(request, `/books/${slug}/chapters`, 'GET');
+  const chapterRows = chapters.body.data as { chapter_uuid: string }[];
+  const secondChapterUuid = String(chapterRows[1].chapter_uuid);
+
+  await signIn(page, token);
+  await page.goto(`/library`);
+  await expect(page.getByText('Kệ sách của tôi')).toBeVisible();
+
+  const added = await json(request, `/library/${slug}`, 'POST', undefined, token);
+  expect(added.status).toBe(201);
+  await page.reload();
+  await expect(page.getByText(title).first()).toBeVisible({ timeout: 20_000 });
+
+  await page.goto(`/reader/${slug}`);
+  await expect(page.getByRole('heading', { name: 'Chương 1' })).toBeVisible({ timeout: 25_000 });
+  await expect(page.getByText('Nội dung ban đầu')).toBeVisible();
+  await page.getByRole('button', { name: /Chương 2/ }).click();
+  await expect(page.getByRole('heading', { name: 'Chương 2' })).toBeVisible();
+  await expect(page).toHaveURL(/chapter=/);
+
+  await page.goto('/history');
+  await expect(page.getByRole('heading', { name: 'Lịch sử đọc' })).toBeVisible();
+  await expect(page.getByText(title).first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(/Chương 2/).first()).toBeVisible();
+  const deepLink = page.getByRole('link', { name: 'Đọc tiếp' }).first();
+  await expect(deepLink).toHaveAttribute('href', new RegExp(`/reader/${slug}\\?chapter=`));
+
+  await deepLink.click();
+  await expect(page).toHaveURL(new RegExp(`/reader/${slug}\\?chapter=${secondChapterUuid}`));
+  await expect(page.getByRole('heading', { name: 'Chương 2' })).toBeVisible({ timeout: 25_000 });
+});
+
+test('admin UI: đăng nhập quản trị, xem dashboard và danh sách người dùng', async ({ page }) => {
+  await page.goto('/admin/login');
+  await page.locator('#admin-email').fill(ADMIN.username);
+  await page.locator('#admin-password').fill(ADMIN.password);
+  await page.getByRole('button', { name: 'Đăng nhập quản trị' }).click();
+  await expect(page).toHaveURL(/\/admin$/, { timeout: 30_000 });
+  await expect(page.getByRole('heading', { name: 'Bảng điều khiển' })).toBeVisible({ timeout: 25_000 });
+  await expect(page.getByText('Tổng người dùng')).toBeVisible();
+
+  await page.goto('/admin/users');
+  await expect(page.getByRole('heading', { name: /Người dùng/ })).toBeVisible({ timeout: 25_000 });
+});
+
+test('comments UI: người khác không thấy nút sửa/xoá bình luận của chủ sở hữu', async ({ page, request }) => {
+  const author = await seedAuthor(request);
+  const published = await json(request, `/studio/books/${author.bookUuid}/publish`, 'POST', undefined, author.token);
+  const slug = String(published.body.slug);
+
+  const other = await seedAuthor(request);
+  const comment = await json(request, `/books/${slug}/comments`, 'POST', { body: 'Bình luận của tác giả' }, author.token);
+  expect(comment.status).toBe(201);
+
+  await signIn(page, other.token);
+  await page.goto(`/books/${slug}`);
+  await expect(page.getByText('Bình luận của tác giả')).toBeVisible({ timeout: 25_000 });
+  await expect(page.getByRole('button', { name: 'Sửa' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Xoá' })).toHaveCount(0);
+});
+
+

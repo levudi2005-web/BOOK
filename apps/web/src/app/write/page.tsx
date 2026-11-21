@@ -1,99 +1,309 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Input } from '@/components/ui/field';
+import { EmptyState } from '@/components/ui/empty-state';
+import { Input, Label, Select, Textarea } from '@/components/ui/field';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/toast';
-import { createBook, listMyBooks, publishBook, type StudioBook } from '@/lib/api';
+import { BookIcon, BookOpenIcon } from '@/components/icons';
+import {
+  createBook,
+  deleteStudioBook,
+  isAuthError,
+  listMyBooks,
+  publishBook,
+  type StudioBook,
+} from '@/lib/api';
+import { statusLabel, validateMetadata, visibilityLabel } from '@/lib/studio-validation';
+
+const LANGUAGES = [
+  { value: 'vi', label: 'Tiếng Việt' },
+  { value: 'en', label: 'English' },
+];
+
+const emptyForm = { title: '', subtitle: '', description: '', language: 'vi' };
 
 export default function WritePage() {
   const { toast } = useToast();
   const [books, setBooks] = useState<StudioBook[]>([]);
-  const [title, setTitle] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [authRequired, setAuthRequired] = useState(false);
+  const [error, setError] = useState('');
+  const [form, setForm] = useState(emptyForm);
+  const [creating, setCreating] = useState(false);
+  const [busyUuid, setBusyUuid] = useState('');
+  const [confirmDeleteUuid, setConfirmDeleteUuid] = useState('');
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     try {
-      const res = await listMyBooks();
-      setBooks(res.data);
-    } catch {
-      toast('Không thể tải danh sách sách.', 'default');
-    }
-  }
-
-  useEffect(() => {
-    void refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  async function onCreate(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!title.trim()) return;
-    setLoading(true);
-    try {
-      await createBook({ title: title.trim(), language: 'vi' });
-      setTitle('');
-      toast('Đã tạo bản thảo mới.', 'default');
-      await refresh();
-    } catch (error) {
-      toast(error instanceof Error ? error.message : 'Không thể tạo sách.', 'default');
+      const response = await listMyBooks();
+      setBooks(response.data);
+      setError('');
+      setAuthRequired(false);
+    } catch (loadError) {
+      if (isAuthError(loadError)) {
+        setAuthRequired(true);
+      } else {
+        setError(loadError instanceof Error ? loadError.message : 'Không thể tải danh sách sách.');
+      }
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  async function onCreate(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const validationError = validateMetadata(form);
+    if (validationError) {
+      toast(validationError, 'error');
+      return;
+    }
+    setCreating(true);
+    try {
+      await createBook({
+        title: form.title.trim(),
+        subtitle: form.subtitle.trim(),
+        description: form.description,
+        language: form.language,
+      });
+      setForm(emptyForm);
+      await refresh();
+      toast('Đã tạo bản thảo mới.', 'success');
+    } catch (createError) {
+      toast(createError instanceof Error ? createError.message : 'Không thể tạo sách.', 'error');
+    } finally {
+      setCreating(false);
+    }
   }
 
-  async function onPublish(bookUuid: string) {
+  async function onPublish(book: StudioBook) {
+    setBusyUuid(book.bookUuid);
     try {
-      await publishBook(bookUuid);
-      toast('Đã xuất bản sách.', 'default');
+      await publishBook(book.bookUuid);
       await refresh();
-    } catch (error) {
-      toast(error instanceof Error ? error.message : 'Không thể xuất bản.', 'default');
+      toast('Sách đã được xuất bản công khai.', 'success');
+    } catch (publishError) {
+      toast(publishError instanceof Error ? publishError.message : 'Không thể xuất bản sách.', 'error');
+    } finally {
+      setBusyUuid('');
     }
+  }
+
+  async function onDelete(book: StudioBook) {
+    if (confirmDeleteUuid !== book.bookUuid) {
+      setConfirmDeleteUuid(book.bookUuid);
+      return;
+    }
+    setBusyUuid(book.bookUuid);
+    try {
+      await deleteStudioBook(book.bookUuid);
+      setConfirmDeleteUuid('');
+      await refresh();
+      toast('Đã xóa sách khỏi Author Studio.', 'success');
+    } catch (deleteError) {
+      toast(deleteError instanceof Error ? deleteError.message : 'Không thể xóa sách.', 'error');
+    } finally {
+      setBusyUuid('');
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="container-site py-10">
+        <Skeleton className="h-9 w-64" />
+        <Skeleton className="mt-3 h-4 w-80" />
+        <Skeleton className="mt-8 h-64 rounded-2xl" />
+        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Skeleton className="h-40 rounded-2xl" />
+          <Skeleton className="h-40 rounded-2xl" />
+          <Skeleton className="h-40 rounded-2xl" />
+        </div>
+      </div>
+    );
+  }
+
+  if (authRequired) {
+    return (
+      <div className="container-site py-16">
+        <EmptyState
+          icon={<BookIcon className="h-6 w-6" />}
+          title="Đăng nhập để bắt đầu viết"
+          description="Author Studio cần phiên đăng nhập hợp lệ để tạo và quản lý sách của bạn."
+          action={
+            <div className="flex flex-wrap justify-center gap-3">
+              <Link
+                href="/auth/login"
+                className="focus-ring inline-flex h-11 items-center rounded-full bg-primary px-5 text-sm font-medium text-primary-foreground"
+              >
+                Đăng nhập
+              </Link>
+              <Link
+                href="/auth/register"
+                className="focus-ring inline-flex h-11 items-center rounded-full border border-border px-5 text-sm font-medium text-foreground"
+              >
+                Tạo tài khoản
+              </Link>
+            </div>
+          }
+        />
+      </div>
+    );
   }
 
   return (
     <div className="container-site py-10">
       <div className="mb-6">
-        <h1 className="font-serif text-2xl text-foreground">Author Studio</h1>
-        <p className="text-sm text-muted-foreground">Viết, quản lý chương và xuất bản sách của bạn.</p>
+        <h1 className="font-serif text-3xl text-foreground">Author Studio</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Tạo bản thảo, viết chương và xuất bản sách của bạn lên thư viện.
+        </p>
       </div>
 
-      <form onSubmit={onCreate} className="mb-8 flex gap-3">
-        <Input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="Tiêu đề bản thảo mới"
-          className="max-w-md"
-        />
-        <Button type="submit" disabled={loading || !title.trim()}>
-          {loading ? 'Đang tạo…' : 'Tạo bản thảo'}
-        </Button>
-      </form>
+      {error ? (
+        <div className="mb-6 rounded-xl border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger">
+          {error}{' '}
+          <button
+            type="button"
+            onClick={() => { setLoading(true); void refresh(); }}
+            className="font-medium underline"
+          >
+            Thử lại
+          </button>
+        </div>
+      ) : null}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {books.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Bạn chưa có bản thảo nào.</p>
-        ) : null}
-        {books.map((book) => (
-          <Card key={book.bookUuid} className="p-5">
-            <h2 className="font-serif text-lg text-foreground">{book.title}</h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Trạng thái: {book.status} · {book.visibility}
-            </p>
-            <div className="mt-4 flex gap-2">
-              <Button variant="outline" disabled={book.status === 'published'} onClick={() => onPublish(book.bookUuid)}>
-                {book.status === 'published' ? 'Đã xuất bản' : 'Xuất bản'}
-              </Button>
-              <Link href={`/write/${book.bookUuid}`} className="inline-flex items-center rounded-xl bg-primary px-4 py-2 text-sm text-primary-foreground">
-                Mở
-              </Link>
+
+      <Card className="p-6">
+        <h2 className="font-serif text-xl text-foreground">Tạo sách mới</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Sách mới luôn được lưu ở dạng bản nháp riêng tư cho đến khi bạn xuất bản.
+        </p>
+        <form onSubmit={onCreate} className="mt-4 space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="new-title">Tiêu đề</Label>
+              <Input
+                id="new-title"
+                value={form.title}
+                maxLength={500}
+                required
+                placeholder="Tên sách"
+                onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
+              />
             </div>
-          </Card>
-        ))}
+            <div>
+              <Label htmlFor="new-subtitle">Phụ đề</Label>
+              <Input
+                id="new-subtitle"
+                value={form.subtitle}
+                maxLength={500}
+                placeholder="Không bắt buộc"
+                onChange={(event) => setForm((current) => ({ ...current, subtitle: event.target.value }))}
+              />
+            </div>
+          </div>
+          <div className="max-w-xs">
+            <Label htmlFor="new-language">Ngôn ngữ</Label>
+            <Select
+              id="new-language"
+              value={form.language}
+              onChange={(event) => setForm((current) => ({ ...current, language: event.target.value }))}
+            >
+              {LANGUAGES.map((language) => (
+                <option key={language.value} value={language.value}>
+                  {language.label}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="new-description">Mô tả</Label>
+            <Textarea
+              id="new-description"
+              value={form.description}
+              className="min-h-28"
+              placeholder="Giới thiệu ngắn về nội dung sách"
+              onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
+            />
+          </div>
+          <Button type="submit" disabled={creating || !form.title.trim()}>
+            {creating ? 'Đang tạo…' : 'Tạo bản thảo'}
+          </Button>
+        </form>
+      </Card>
+
+
+      <div className="mt-8">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h2 className="font-serif text-xl text-foreground">Sách của tôi</h2>
+          <span className="text-xs text-muted-foreground">{books.length} sách</span>
+        </div>
+
+        {books.length === 0 ? (
+          <EmptyState
+            icon={<BookOpenIcon className="h-6 w-6" />}
+            title="Chưa có bản thảo nào"
+            description="Tạo sách đầu tiên bằng biểu mẫu bên trên, sau đó thêm chương và xuất bản."
+          />
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {books.map((book) => (
+              <Card key={book.bookUuid} className="flex h-full flex-col p-5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant={book.status === 'published' ? 'default' : 'muted'}>
+                    {statusLabel(book.status)}
+                  </Badge>
+                  <Badge variant="outline">{visibilityLabel(book.visibility)}</Badge>
+                </div>
+                <h3 className="mt-3 line-clamp-2 font-serif text-lg text-foreground">{book.title}</h3>
+                {book.subtitle ? (
+                  <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{book.subtitle}</p>
+                ) : null}
+                <p className="mt-2 truncate text-xs text-muted-foreground">/books/{book.slug}</p>
+                {book.publishedAt ? (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Xuất bản {new Date(book.publishedAt).toLocaleDateString('vi-VN')}
+                  </p>
+                ) : null}
+
+                <div className="mt-auto flex flex-wrap gap-2 pt-4">
+                  <Link
+                    href={`/write/${book.bookUuid}`}
+                    className="focus-ring inline-flex h-9 items-center rounded-full bg-primary px-4 text-sm font-medium text-primary-foreground"
+                  >
+                    Mở
+                  </Link>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busyUuid === book.bookUuid}
+                    onClick={() => void onPublish(book)}
+                  >
+                    {book.status === 'published' ? 'Xuất bản lại' : 'Xuất bản'}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    disabled={busyUuid === book.bookUuid}
+                    onClick={() => void onDelete(book)}
+                  >
+                    {confirmDeleteUuid === book.bookUuid ? 'Xác nhận xóa' : 'Xóa'}
+                  </Button>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
 }
+

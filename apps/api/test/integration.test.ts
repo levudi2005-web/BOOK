@@ -5,6 +5,7 @@ import { signGatewayRequest } from '../src/common/gateway-sign.util.js';
 import { DatabaseService } from '../src/database/database.service.js';
 import { AdminDatabaseService } from '../src/admin/admin-database.service.js';
 import { AdminService } from '../src/admin/admin.service.js';
+import { MailService } from '../src/mail/mail.service.js';
 
 let app: RunningApp;
 let userDb: DatabaseService;
@@ -282,3 +283,293 @@ test('search (meilisearch): reindex qua gateway → tìm thấy sách đã publi
 });
 
 
+
+
+test('profile: đọc/cập nhật hồ sơ và không lộ dữ liệu nhạy cảm', async () => {
+  const me = await jsonRequest(`${app.url}/me`, 'GET', undefined, auth(userA.accessToken));
+  assert.equal(me.status, 200);
+  assert.equal(me.body.username, userA.username);
+  assert.ok(!('password_hash' in me.body));
+  assert.ok(!('session_token_hash' in me.body));
+  assert.ok(!('recoveryKey' in me.body));
+
+  const patched = await jsonRequest(
+    `${app.url}/me`,
+    'PATCH',
+    { displayName: 'E2E Author', bio: 'Hồ sơ kiểm thử', websiteUrl: 'https://example.test' },
+    auth(userA.accessToken),
+  );
+  assert.equal(patched.status, 200);
+  assert.equal((patched.body.profile as { displayName: string }).displayName, 'E2E Author');
+
+  const invalid = await jsonRequest(`${app.url}/me`, 'PATCH', { websiteUrl: 'not-a-url' }, auth(userA.accessToken));
+  assert.equal(invalid.status, 400);
+
+  const anonymous = await jsonRequest(`${app.url}/me`, 'GET');
+  assert.equal(anonymous.status, 401);
+});
+
+test('author studio: categories, tags, version restore, unpublish và ownership', async () => {
+  const created = await jsonRequest(
+    `${app.url}/studio/books`,
+    'POST',
+    { title: `E2E Studio ${suffix}`, description: 'Kiểm thử studio' },
+    auth(userA.accessToken),
+  );
+  assert.equal(created.status, 201);
+  const bookUuid = String(created.body.bookUuid);
+
+  const categories = await jsonRequest(`${app.url}/studio/categories`, 'GET', undefined, auth(userA.accessToken));
+  assert.equal(categories.status, 200);
+  assert.ok(Array.isArray(categories.body.data));
+  const categoryIds = (categories.body.data as { categoryId: number }[]).slice(0, 1).map((c) => c.categoryId);
+  // Hệ thống có thể chưa có danh mục nào (bảng categories trống) — khi đó chỉ
+  // kiểm tra endpoint hoạt động, còn gán danh mục được kiểm tra khi có dữ liệu.
+  if (categoryIds.length > 0) {
+    const withCategories = await jsonRequest(
+      `${app.url}/studio/books/${bookUuid}/categories`,
+      'PUT',
+      { categoryIds },
+      auth(userA.accessToken),
+    );
+    assert.equal(withCategories.status, 200);
+    assert.equal((withCategories.body.categories as unknown[]).length, 1);
+  }
+
+  const withTags = await jsonRequest(
+    `${app.url}/studio/books/${bookUuid}/tags`,
+    'PUT',
+    { tags: ['E2E', 'Kiểm thử'] },
+    auth(userA.accessToken),
+  );
+  assert.equal(withTags.status, 200);
+  assert.deepEqual(withTags.body.tags, ['E2E', 'Kiểm thử']);
+
+  const chapter = await jsonRequest(
+    `${app.url}/studio/books/${bookUuid}/chapters`,
+    'POST',
+    { title: 'Chương 1', content: 'Nội dung kiểm thử' },
+    auth(userA.accessToken),
+  );
+  assert.equal(chapter.status, 201);
+
+  const published = await jsonRequest(
+    `${app.url}/studio/books/${bookUuid}/publish`,
+    'POST',
+    undefined,
+    auth(userA.accessToken),
+  );
+  assert.equal(published.status, 201);
+  assert.equal(published.body.status, 'published');
+
+  const versions = await jsonRequest(
+    `${app.url}/studio/books/${bookUuid}/versions`,
+    'GET',
+    undefined,
+    auth(userA.accessToken),
+  );
+  assert.equal(versions.status, 200);
+  const versionNumber = (versions.body.data as { version_number: number }[])[0].version_number;
+
+  const restored = await jsonRequest(
+    `${app.url}/studio/books/${bookUuid}/versions/${versionNumber}/restore`,
+    'POST',
+    undefined,
+    auth(userA.accessToken),
+  );
+  assert.equal(restored.status, 201);
+  assert.equal((restored.body as { restoredChapters: number }).restoredChapters, 1);
+
+  const unpublished = await jsonRequest(
+    `${app.url}/studio/books/${bookUuid}/unpublish`,
+    'POST',
+    undefined,
+    auth(userA.accessToken),
+  );
+  assert.equal(unpublished.status, 201);
+  assert.equal(unpublished.body.status, 'draft');
+  assert.equal(unpublished.body.visibility, 'private');
+
+  const catalog = await jsonRequest(`${app.url}/books?q=${encodeURIComponent(`E2E Studio ${suffix}`)}`, 'GET');
+  const catalogData = (catalog.body.data as { title: string }[]) ?? [];
+  assert.ok(!catalogData.some((book) => book.title === `E2E Studio ${suffix}`));
+
+  const foreignWrite = await jsonRequest(
+    `${app.url}/studio/books/${bookUuid}/tags`,
+    'PUT',
+    { tags: ['hijack'] },
+    auth(userB.accessToken),
+  );
+  assert.equal(foreignWrite.status, 403);
+});
+
+const COVER_PNG_BASE64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+async function uploadImage(token: string, mimeType = 'image/png', filename = 'cover.png'): Promise<string> {
+  const totalBytes = Buffer.from(COVER_PNG_BASE64, 'base64').length;
+  const init = await jsonRequest(`${app.url}/storage/objects`, 'POST', { filename, mimeType, totalBytes }, auth(token));
+  assert.equal(init.status, 201);
+  const { sessionUuid } = init.body as { sessionUuid: string };
+  const chunk = await jsonRequest(
+    `${app.url}/storage/objects/${sessionUuid}/chunks`,
+    'POST',
+    { chunkIndex: 0, data: COVER_PNG_BASE64 },
+    auth(token),
+  );
+  assert.equal(chunk.status, 201);
+  const complete = await jsonRequest(`${app.url}/storage/objects/${sessionUuid}/complete`, 'POST', undefined, auth(token));
+  assert.equal(complete.status, 201);
+  return String(complete.body.objectUuid);
+}
+
+test('cover: public serve chỉ khi sách public + object public, ownership khi gán/xoá', async () => {
+  const created = await jsonRequest(`${app.url}/studio/books`, 'POST', { title: `E2E Cover ${suffix}` }, auth(userA.accessToken));
+  assert.equal(created.status, 201);
+  const bookUuid = String(created.body.bookUuid);
+  await jsonRequest(`${app.url}/studio/books/${bookUuid}/chapters`, 'POST', { title: 'Chương 1', content: 'Nội dung' }, auth(userA.accessToken));
+
+  const objectUuid = await uploadImage(userA.accessToken);
+
+  // userB không thể gán object của userA vào sách của userA
+  const foreignAttach = await jsonRequest(
+    `${app.url}/studio/books/${bookUuid}/cover`,
+    'POST',
+    { objectUuid },
+    auth(userB.accessToken),
+  );
+  assert.equal(foreignAttach.status, 403);
+
+  // Sai MIME bị từ chối
+  const textObject = await uploadImage(userA.accessToken, 'text/plain', 'notes.txt');
+  const wrongMime = await jsonRequest(
+    `${app.url}/studio/books/${bookUuid}/cover`,
+    'POST',
+    { objectUuid: textObject },
+    auth(userA.accessToken),
+  );
+  assert.equal(wrongMime.status, 400);
+
+  const attached = await jsonRequest(
+    `${app.url}/studio/books/${bookUuid}/cover`,
+    'POST',
+    { objectUuid },
+    auth(userA.accessToken),
+  );
+  assert.equal(attached.status, 201);
+  assert.equal(attached.body.coverStorageKey, objectUuid);
+
+  const published = await jsonRequest(`${app.url}/studio/books/${bookUuid}/publish`, 'POST', undefined, auth(userA.accessToken));
+  assert.equal(published.status, 201);
+  const slug = String(published.body.slug);
+
+  const publicCover = await fetch(`${app.url}/books/${slug}/cover`);
+  assert.equal(publicCover.status, 200);
+  assert.equal(publicCover.headers.get('content-type'), 'image/png');
+  assert.deepEqual(Buffer.from(await publicCover.arrayBuffer()), Buffer.from(COVER_PNG_BASE64, 'base64'));
+
+  // Người khác vẫn không tải trực tiếp object qua API storage
+  const direct = await jsonRequest(`${app.url}/storage/objects/${objectUuid}`, 'GET', undefined, auth(userB.accessToken));
+  assert.equal(direct.status, 403);
+
+  // Unpublish → cover không còn phục vụ công khai
+  await jsonRequest(`${app.url}/studio/books/${bookUuid}/unpublish`, 'POST', undefined, auth(userA.accessToken));
+  const afterUnpublish = await fetch(`${app.url}/books/${slug}/cover`);
+  assert.equal(afterUnpublish.status, 404);
+
+  // Xoá bìa (owner) → trường cover rỗng
+  const removed = await jsonRequest(`${app.url}/studio/books/${bookUuid}/cover`, 'DELETE', undefined, auth(userA.accessToken));
+  assert.equal(removed.status, 200);
+  assert.equal(removed.body.coverStorageKey, null);
+});
+
+test('comments: sửa/xoá chỉ chủ sở hữu, danh sách phản ánh thay đổi', async () => {
+  const created = await jsonRequest(`${app.url}/studio/books`, 'POST', { title: `E2E Comment ${suffix}` }, auth(userA.accessToken));
+  const bookUuid = String(created.body.bookUuid);
+  await jsonRequest(`${app.url}/studio/books/${bookUuid}/chapters`, 'POST', { title: 'Chương 1', content: 'Nội dung' }, auth(userA.accessToken));
+  const published = await jsonRequest(`${app.url}/studio/books/${bookUuid}/publish`, 'POST', undefined, auth(userA.accessToken));
+  const slug = String(published.body.slug);
+
+  const added = await jsonRequest(`${app.url}/books/${slug}/comments`, 'POST', { body: 'Bình luận gốc' }, auth(userA.accessToken));
+  assert.equal(added.status, 201);
+  const commentUuid = String(added.body.commentUuid);
+
+  const foreignEdit = await jsonRequest(`${app.url}/comments/${commentUuid}`, 'PATCH', { body: 'hijack' }, auth(userB.accessToken));
+  assert.equal(foreignEdit.status, 403);
+
+  const edited = await jsonRequest(`${app.url}/comments/${commentUuid}`, 'PATCH', { body: 'Đã sửa' }, auth(userA.accessToken));
+  assert.equal(edited.status, 200);
+  assert.equal(edited.body.body, 'Đã sửa');
+
+  const list = await jsonRequest(`${app.url}/books/${slug}/comments`, 'GET');
+  assert.ok((list.body.data as { body: string }[]).some((comment) => comment.body === 'Đã sửa'));
+
+  const foreignDelete = await jsonRequest(`${app.url}/comments/${commentUuid}`, 'DELETE', undefined, auth(userB.accessToken));
+  assert.equal(foreignDelete.status, 403);
+
+  const deleted = await jsonRequest(`${app.url}/comments/${commentUuid}`, 'DELETE', undefined, auth(userA.accessToken));
+  assert.equal(deleted.status, 200);
+});
+
+test('email verification + password reset: token một lần, hash trong DB, chống enumeration', async () => {
+  const mail = app.app.get(MailService);
+
+  const requested = await jsonRequest(
+    `${app.url}/auth/email/verification/request`,
+    'POST',
+    undefined,
+    auth(userA.accessToken),
+  );
+  assert.equal(requested.status, 202);
+  assert.equal(requested.body.delivery, 'sent');
+
+  const verifyMail = mail.outbox[mail.outbox.length - 1];
+  const verifyToken = /token=([A-Za-z0-9_-]+)/.exec(verifyMail.text)?.[1] ?? '';
+  assert.ok(verifyToken.length >= 40);
+
+  // DB chỉ lưu hash nhị phân, không có token thô
+  const stored = await userDb.query<{ token_hash: Buffer }[]>(
+    `SELECT token_hash FROM user_security_tokens WHERE user_id = ? ORDER BY issued_at DESC LIMIT 1`,
+    [userA.userId],
+  );
+  assert.equal(stored.length, 1);
+  assert.ok(Buffer.isBuffer(stored[0].token_hash));
+  assert.ok(!stored[0].token_hash.toString('utf8').includes(verifyToken));
+
+  const confirmed = await jsonRequest(`${app.url}/auth/email/verification/confirm`, 'POST', { token: verifyToken });
+  assert.equal(confirmed.status, 200);
+
+  const reused = await jsonRequest(`${app.url}/auth/email/verification/confirm`, 'POST', { token: verifyToken });
+  assert.equal(reused.status, 400);
+
+  const verified = await userDb.query<{ email_verified_at: Date | null }[]>(
+    `SELECT email_verified_at FROM users WHERE user_id = ? LIMIT 1`,
+    [userA.userId],
+  );
+  assert.ok(verified[0].email_verified_at);
+
+  // Forgot password: phản hồi giống nhau cho tài khoản tồn tại và không tồn tại
+  const existing = await jsonRequest(`${app.url}/auth/password/forgot`, 'POST', { identifier: userB.username });
+  const missing = await jsonRequest(`${app.url}/auth/password/forgot`, 'POST', { identifier: `missing_${suffix}` });
+  assert.equal(existing.status, 202);
+  assert.equal(missing.status, 202);
+  assert.deepEqual(existing.body, missing.body);
+
+  const resetMail = mail.outbox[mail.outbox.length - 1];
+  const resetToken = /token=([A-Za-z0-9_-]+)/.exec(resetMail.text)?.[1] ?? '';
+  assert.ok(resetToken.length >= 40);
+
+  const weak = await jsonRequest(`${app.url}/auth/password/reset`, 'POST', { token: resetToken, password: 'short' });
+  assert.equal(weak.status, 400);
+
+  const reset = await jsonRequest(`${app.url}/auth/password/reset`, 'POST', { token: resetToken, password: 'newpassword456' });
+  assert.equal(reset.status, 200);
+
+  const loginNew = await jsonRequest(`${app.url}/auth/login`, 'POST', { identifier: userB.username, password: 'newpassword456' });
+  assert.equal(loginNew.status, 200);
+  const loginOld = await jsonRequest(`${app.url}/auth/login`, 'POST', { identifier: userB.username, password: 'password123' });
+  assert.equal(loginOld.status, 401);
+
+  const reuseReset = await jsonRequest(`${app.url}/auth/password/reset`, 'POST', { token: resetToken, password: 'anotherpass789' });
+  assert.equal(reuseReset.status, 400);
+});

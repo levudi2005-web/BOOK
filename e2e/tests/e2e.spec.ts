@@ -3,7 +3,6 @@ import { admin, api, creds, uniqueSuffix } from './helpers.js';
 
 let userAToken = '';
 let userBToken = '';
-let adminToken = '';
 let userARecoveryKey = '';
 let bookSlug = '';
 
@@ -23,7 +22,7 @@ test.beforeAll(async () => {
   // Admin login via API (admin bootstrapped outside Playwright).
   const loginAdmin = await api('/admin/auth/login', 'POST', { identifier: admin.username, password: admin.password });
   expect(loginAdmin.status).toBe(200);
-  adminToken = String(loginAdmin.body.accessToken);
+  expect(String(loginAdmin.body.accessToken).length).toBeGreaterThan(0);
 });
 
 async function loginViaUi(page: Page, identifier: string, password: string) {

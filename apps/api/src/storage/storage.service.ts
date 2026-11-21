@@ -501,5 +501,51 @@ export class StorageService {
     return { dto: this.toObjectDto(row), stream: generator() };
   }
 
+  /**
+   * Marks an owned object as explicitly public (book covers). Private by
+   * default; only objects flagged here can be served by the public cover route.
+   */
+  async setObjectVisibility(userId: number, objectUuid: string, isPublic: boolean) {
+    const row = await this.findObject(userId, objectUuid);
+    await this.db.query(`UPDATE storage_objects SET is_public = ? WHERE object_id = ?`, [
+      isPublic ? 1 : 0,
+      row.object_id,
+    ]);
+    return { status: 'ok', isPublic };
+  }
+
+  /**
+   * Streams an object flagged `is_public = 1` and fully uploaded.
+   * Callers MUST also verify that the owning resource is publicly visible;
+   * this method alone never exposes private files.
+   */
+  async streamPublicObject(objectUuid: string) {
+    const rows = await this.db.query<ObjectRow[]>(
+      `SELECT object_id, object_uuid, owner_user_id, filename, mime_type, size_bytes,
+              chunk_size, chunk_count, status, checksum_sha256, is_public
+       FROM storage_objects
+       WHERE object_uuid = ? AND status = 'complete' AND is_public = 1
+       LIMIT 1`,
+      [objectUuid],
+    );
+    if (rows.length === 0) {
+      throw new NotFoundException('Không tìm thấy tài nguyên công khai.');
+    }
+    const row = rows[0];
+    const db = this.db;
+    const objectId = row.object_id;
+    const chunkCount = row.chunk_count;
+    async function* generator() {
+      for (let index = 0; index < chunkCount; index += 1) {
+        const chunks = await db.query<{ payload: Buffer }[]>(
+          `SELECT payload FROM storage_chunks WHERE object_id = ? AND chunk_index = ? LIMIT 1`,
+          [objectId, index],
+        );
+        if (chunks.length > 0) yield chunks[0].payload;
+      }
+    }
+    return { dto: this.toObjectDto(row), stream: generator() };
+  }
 }
+
 

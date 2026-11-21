@@ -19,6 +19,8 @@
     --ring: 198 166 107;
     --danger: 168 60 54;
     --danger-foreground: 255 255 255;
+    /* System monospace stack: no webfont needed, always available. */
+    --font-mono: ui-monospace;
   }
 
   .dark {
@@ -50,8 +52,9 @@
   body {
     background-color: rgb(var(--background));
     color: rgb(var(--foreground));
-    font-family: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI',
-      Roboto, 'Noto Sans', 'Helvetica Neue', Arial, sans-serif;
+    font-family: var(--font-sans), ui-sans-serif, system-ui, -apple-system, 'Segoe UI',
+      Roboto, 'Noto Sans', 'Helvetica Neue', Arial, 'Apple Color Emoji',
+      'Segoe UI Emoji', sans-serif;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }
@@ -60,8 +63,16 @@
   h2,
   h3,
   h4 {
-    font-family: Georgia, Cambria, 'Times New Roman', 'Noto Serif', serif;
+    font-family: var(--font-serif), Georgia, Cambria, 'Times New Roman', 'Noto Serif', serif;
     letter-spacing: -0.01em;
+  }
+
+  code,
+  kbd,
+  samp,
+  pre {
+    font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Consolas,
+      'Liberation Mono', monospace;
   }
 
   ::selection {
@@ -147,9 +158,9 @@
   padding: 0 0.5rem;
   border-radius: 0.5rem;
   font-size: 0.875rem;
-  color: var(--foreground);
+  color: rgb(var(--foreground));
   transition: background-color 150ms;
 }
 .toolbar-btn:hover {
-  background-color: var(--surface);
+  background-color: rgb(var(--surface));
 }

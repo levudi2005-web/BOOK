@@ -58,7 +58,7 @@ export class SocialController {
   saveProgress(
     @CurrentUserId() userId: number,
     @Param('slug') slug: string,
-    @Body() body: { chapterId?: number; percentComplete?: number; isCompleted?: boolean },
+    @Body() body: { chapterId?: number; chapterUuid?: string; percentComplete?: number; isCompleted?: boolean },
   ) {
     return this.social.saveProgress(userId, slug, body);
   }
@@ -83,6 +83,16 @@ export class SocialController {
     @Body() body: { body?: string },
   ) {
     return this.social.addComment(userId, slug, body.body ?? '');
+  }
+
+  @Patch('comments/:commentUuid')
+  @UseGuards(SessionAuthGuard)
+  updateComment(
+    @CurrentUserId() userId: number,
+    @Param('commentUuid') commentUuid: string,
+    @Body() body: { body?: string },
+  ) {
+    return this.social.updateComment(userId, commentUuid, body.body ?? '');
   }
 
   @Delete('comments/:commentUuid')

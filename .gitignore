@@ -1,6 +1,13 @@
 .env
 .env.*
 !.env.example
+!.env.test.example
+test-results/
+playwright-report/
+blob-report/
+# Cấu hình public build-time của web (chỉ NEXT_PUBLIC_*, không chứa secret) được
+# commit để build Cloudflare/CI không rơi về đường dẫn same-origin /api.
+!.env.production
 node_modules/
 dist/
 dist-test/

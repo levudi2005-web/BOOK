@@ -1,4 +1,5 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Param, Query, Res, StreamableFile } from '@nestjs/common';
+import { Readable } from 'node:stream';
 import { CatalogService } from './catalog.service.js';
 
 @Controller()
@@ -8,6 +9,19 @@ export class CatalogController {
   @Get('books')
   listBooks(@Query() query: Record<string, string>) {
     return this.catalog.listBooks(query);
+  }
+
+  @Get('books/:slug/cover')
+  async getBookCover(
+    @Param('slug') slug: string,
+    @Res({ passthrough: true }) res: { setHeader(name: string, value: string): void },
+  ) {
+    const { dto, stream } = await this.catalog.getPublicCover(slug);
+    res.setHeader('Content-Type', dto.mimeType);
+    res.setHeader('Content-Length', String(dto.sizeBytes));
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    return new StreamableFile(Readable.from(stream));
   }
 
   @Get('books/:slug')

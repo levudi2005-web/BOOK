@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { fetchBook, fetchBookChapters, saveProgress, type Chapter } from '@/lib/api';
+import { fetchBook, fetchBookChapters, getAccessToken, saveProgress, type Chapter } from '@/lib/api';
 import { ArrowLeftIcon } from '@/components/icons';
 
 export function Reader() {
@@ -20,11 +20,24 @@ export function Reader() {
       .then(async ([book, chaptersRes]) => {
         setTitle(book.title);
         setChapters(chaptersRes.data);
-        setCurrent(0);
-        if (chaptersRes.data.length > 0) {
-          const pct = chaptersRes.data.length === 1 ? 100 : Math.round((1 / chaptersRes.data.length) * 100);
+        // Deep-link từ lịch sử đọc: /reader/<slug>?chapter=<chapter_uuid>
+        const requested =
+          typeof window === 'undefined'
+            ? null
+            : new URLSearchParams(window.location.search).get('chapter');
+        const targetIndex = requested
+          ? chaptersRes.data.findIndex((chapter) => chapter.chapter_uuid === requested)
+          : 0;
+        const index = targetIndex >= 0 ? targetIndex : 0;
+        setCurrent(index);
+        if (chaptersRes.data.length > 0 && getAccessToken()) {
+          const pct = Math.round(((index + 1) / chaptersRes.data.length) * 100);
           try {
-            await saveProgress(slug, { percentComplete: pct, isCompleted: chaptersRes.data.length === 1 });
+            await saveProgress(slug, {
+              percentComplete: pct,
+              isCompleted: index === chaptersRes.data.length - 1,
+              chapterUuid: chaptersRes.data[index]?.chapter_uuid,
+            });
           } catch {
             // progress is best-effort
           }
@@ -36,10 +49,18 @@ export function Reader() {
 
   async function goTo(index: number) {
     setCurrent(index);
-    if (chapters.length > 0) {
+    const target = chapters[index];
+    if (target && typeof window !== 'undefined') {
+      window.history.replaceState(null, '', `?chapter=${encodeURIComponent(target.chapter_uuid)}`);
+    }
+    if (chapters.length > 0 && getAccessToken()) {
       const pct = Math.round(((index + 1) / chapters.length) * 100);
       try {
-        await saveProgress(slug, { percentComplete: pct, isCompleted: index === chapters.length - 1 });
+        await saveProgress(slug, {
+          percentComplete: pct,
+          isCompleted: index === chapters.length - 1,
+          chapterUuid: target?.chapter_uuid,
+        });
       } catch {
         // progress is best-effort
       }

@@ -11,6 +11,8 @@ import { SearchModule } from './search/search.module.js';
 import { AdminModule } from './admin/admin.module.js';
 import { DocumentsModule } from './documents/documents.module.js';
 import { SocialModule } from './social/social.module.js';
+import { ProfileModule } from './profile/profile.module.js';
+import { AccountModule } from './account/account.module.js';
 
 @Module({
   imports: [
@@ -24,6 +26,8 @@ import { SocialModule } from './social/social.module.js';
     AdminModule,
     DocumentsModule,
     SocialModule,
+    ProfileModule,
+    AccountModule,
   ],
   controllers: [HealthController, CatalogController],
 })

@@ -7,6 +7,7 @@ import { useToast } from '@/components/toast';
 import {
   completeUpload,
   deleteObject,
+  downloadStorageObject,
   getStorageQuota,
   initUpload,
   listObjects,
@@ -45,6 +46,7 @@ export default function StoragePage() {
   const [tab, setTab] = useState<'files' | 'trash'>('files');
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [downloadingUuid, setDownloadingUuid] = useState('');
 
   const refresh = useCallback(async () => {
     try {
@@ -114,6 +116,25 @@ export default function StoragePage() {
     }
   }
 
+  async function onDownload(obj: StorageObject) {
+    setDownloadingUuid(obj.objectUuid);
+    try {
+      const blob = await downloadStorageObject(obj.objectUuid);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = obj.filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Không thể tải tệp.', 'error');
+    } finally {
+      setDownloadingUuid('');
+    }
+  }
+
   const usedPct = quota ? Math.min(100, Math.round((quota.usedBytes / quota.quotaBytes) * 100)) : 0;
 
   return (
@@ -171,9 +192,13 @@ export default function StoragePage() {
             <div className="flex gap-2">
               {tab === 'files' ? (
                 <>
-                  <a href={`${process.env.NEXT_PUBLIC_API_URL ?? '/api'}/storage/objects/${obj.objectUuid}/download`} className="inline-flex h-9 items-center rounded-full border border-border px-4 text-sm text-foreground hover:bg-surface">
-                    Tải về
-                  </a>
+                  <Button
+                    variant="outline"
+                    disabled={downloadingUuid === obj.objectUuid}
+                    onClick={() => void onDownload(obj)}
+                  >
+                    {downloadingUuid === obj.objectUuid ? 'Đang tải…' : 'Tải về'}
+                  </Button>
                   <Button variant="outline" onClick={() => onDelete(obj.objectUuid)}>Xóa</Button>
                 </>
               ) : (

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -105,12 +106,12 @@ export class SocialService {
   async saveProgress(
     userId: number,
     slug: string,
-    input: { chapterId?: number; percentComplete?: number; isCompleted?: boolean },
+    input: { chapterId?: number; chapterUuid?: string; percentComplete?: number; isCompleted?: boolean },
   ) {
     const book = await this.resolveBook(slug);
     const pct = Math.min(100, Math.max(0, Number(input.percentComplete ?? 0)));
     const completed = input.isCompleted === true || pct >= 100;
-    const chapterId = input.chapterId ?? null;
+    const chapterId = await this.resolveChapterId(book.book_id, input.chapterId, input.chapterUuid);
 
     await this.db.query(
       `INSERT INTO reading_progress
@@ -140,12 +141,46 @@ export class SocialService {
     return { percentComplete: pct, isCompleted: completed };
   }
 
+  /**
+   * Chấp nhận `chapterUuid` (an toàn để deep-link) hoặc `chapterId` cũ và
+   * xác minh chương thuộc đúng sách để không ghi lịch sử chéo sách.
+   */
+  private async resolveChapterId(
+    bookId: number,
+    chapterId?: number,
+    chapterUuid?: string,
+  ): Promise<number | null> {
+    const uuid = (chapterUuid ?? '').trim();
+    if (uuid) {
+      const rows = await this.db.query<{ chapter_id: number }[]>(
+        `SELECT chapter_id FROM book_chapters WHERE chapter_uuid = ? AND book_id = ? LIMIT 1`,
+        [uuid, bookId],
+      );
+      if (rows.length === 0) {
+        throw new BadRequestException('Chương không thuộc sách này.');
+      }
+      return Number(rows[0].chapter_id);
+    }
+    if (chapterId === undefined || chapterId === null) return null;
+    const rows = await this.db.query<{ chapter_id: number }[]>(
+      `SELECT chapter_id FROM book_chapters WHERE chapter_id = ? AND book_id = ? LIMIT 1`,
+      [chapterId, bookId],
+    );
+    if (rows.length === 0) {
+      throw new BadRequestException('Chương không thuộc sách này.');
+    }
+    return Number(rows[0].chapter_id);
+  }
+
   async getHistory(userId: number) {
     const rows = await this.db.query<Record<string, unknown>[]>(
-      `SELECT rh.history_id, rh.started_at, rh.pages_read, b.book_uuid, b.slug, b.title
+      `SELECT rh.history_id, rh.started_at, rh.pages_read,
+              b.book_uuid, b.slug, b.title,
+              c.chapter_uuid, c.chapter_number, c.title AS chapter_title
        FROM reading_history rh
        JOIN books b ON b.book_id = rh.book_id
-       WHERE rh.user_id = ?
+       LEFT JOIN book_chapters c ON c.chapter_id = rh.chapter_id
+       WHERE rh.user_id = ? AND b.deleted_at IS NULL
        ORDER BY rh.started_at DESC
        LIMIT 50`,
       [userId],
@@ -182,6 +217,23 @@ export class SocialService {
       [commentUuid, book.book_id, userId, text],
     );
     return { commentUuid };
+  }
+
+  async updateComment(userId: number, commentUuid: string, body: string) {
+    const text = (body ?? '').trim();
+    if (!text || text.length > 5000) {
+      throw new ForbiddenException('Nội dung bình luận không hợp lệ.');
+    }
+    const rows = await this.db.query<{ comment_id: number; user_id: number }[]>(
+      `SELECT comment_id, user_id FROM comments
+       WHERE comment_uuid = ? AND deleted_at IS NULL AND status = 'published'
+       LIMIT 1`,
+      [commentUuid],
+    );
+    if (rows.length === 0) throw new NotFoundException('Không tìm thấy bình luận.');
+    if (rows[0].user_id !== userId) throw new ForbiddenException('Không có quyền với bình luận này.');
+    await this.db.query(`UPDATE comments SET body = ? WHERE comment_id = ?`, [text, rows[0].comment_id]);
+    return { commentUuid, body: text };
   }
 
   async deleteComment(userId: number, commentUuid: string) {

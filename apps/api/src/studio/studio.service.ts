@@ -1,10 +1,16 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import type { ResultSetHeader } from 'mysql2';
 import { DatabaseService } from '../database/database.service.js';
+import { StorageService } from '../storage/storage.service.js';
+
+const COVER_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+const MAX_COVER_BYTES = 2 * 1024 * 1024; // 2 MiB
 
 type BookRow = {
   book_id: number;
@@ -17,7 +23,9 @@ type BookRow = {
   status: string;
   visibility: string;
   published_at: Date | string | null;
-  created_by_user_id: number | null;
+  created_by_user_id: number;
+  cover_storage_key: string | null;
+  cover_mime_type: string | null;
   word_count?: number;
 };
 
@@ -53,9 +61,37 @@ function slugify(title: string): string {
     .slice(0, 200) || 'book';
 }
 
+type BookSnapshot = {
+  title?: string;
+  subtitle?: string | null;
+  description?: string | null;
+  language?: string;
+  chapters?: { chapterUuid?: string; title?: string; content?: string | null }[];
+};
+
+/**
+ * `book_versions.snapshot_json` is a MySQL JSON column: mysql2 returns it
+ * already parsed, but older rows may still surface as text. Handle both.
+ */
+function parseSnapshot(value: unknown): BookSnapshot | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value) as BookSnapshot;
+    } catch {
+      return null;
+    }
+  }
+  if (typeof value === 'object') return value as BookSnapshot;
+  return null;
+}
+
 @Injectable()
 export class StudioService {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly storage: StorageService,
+  ) {}
 
   async createBook(userId: number, input: { title?: string; subtitle?: string; description?: string; language?: string }) {
     const title = (input.title ?? '').trim();
@@ -89,7 +125,8 @@ export class StudioService {
   async getBook(userId: number, bookUuid: string, knownBookId?: number) {
     const rows = await this.db.query<BookRow[]>(
       `SELECT book_id, book_uuid, title, subtitle, slug, description, language,
-              status, visibility, published_at, created_by_user_id
+              status, visibility, published_at, created_by_user_id,
+              cover_storage_key, cover_mime_type
        FROM books
        WHERE book_uuid = ? AND deleted_at IS NULL
        LIMIT 1`,
@@ -111,8 +148,27 @@ export class StudioService {
       [book.book_id],
     );
 
+    const bookCategories = await this.db.query<{ category_id: number; name: string; slug: string }[]>(
+      `SELECT c.category_id, c.name, c.slug
+       FROM book_categories bc
+       JOIN categories c ON c.category_id = bc.category_id
+       WHERE bc.book_id = ?
+       ORDER BY c.name`,
+      [book.book_id],
+    );
+    const bookTags = await this.db.query<{ name: string; slug: string }[]>(
+      `SELECT t.name, t.slug
+       FROM book_tags bt
+       JOIN tags t ON t.tag_id = bt.tag_id
+       WHERE bt.book_id = ?
+       ORDER BY t.name`,
+      [book.book_id],
+    );
+
     return {
       ...this.toBookDto(book),
+      coverStorageKey: book.cover_storage_key,
+      coverMimeType: book.cover_mime_type,
       chapters: chapters.map((c) => ({
         chapterUuid: c.chapter_uuid,
         chapterNumber: c.chapter_number,
@@ -122,6 +178,12 @@ export class StudioService {
         sortOrder: c.sort_order,
         status: c.status,
       })),
+      categories: bookCategories.map((row) => ({
+        categoryId: row.category_id,
+        name: row.name,
+        slug: row.slug,
+      })),
+      tags: bookTags.map((row) => row.name),
     };
   }
 
@@ -206,31 +268,146 @@ export class StudioService {
 
   async reorderChapters(userId: number, bookUuid: string, orderedUuids: string[]) {
     const book = await this.requireOwnedBook(userId, bookUuid);
-    for (let index = 0; index < orderedUuids.length; index += 1) {
-      await this.db.query(
-        `UPDATE book_chapters SET sort_order = ?, chapter_number = ? WHERE chapter_uuid = ? AND book_id = ?`,
-        [index + 1, index + 1, orderedUuids[index], book.book_id],
+    const existing = await this.db.query<{ chapter_uuid: string }[]>(
+      `SELECT chapter_uuid FROM book_chapters WHERE book_id = ?`,
+      [book.book_id],
+    );
+    const owned = new Set(existing.map((row) => row.chapter_uuid));
+    const ordered = orderedUuids.filter((uuid) => owned.has(uuid));
+    // The payload must be an exact permutation of the book's chapters.
+    if (ordered.length !== owned.size || new Set(ordered).size !== ordered.length) {
+      throw new BadRequestException('Danh sách sắp xếp chương không hợp lệ.');
+    }
+
+    const connection = await this.db.getConnection();
+    try {
+      await connection.beginTransaction();
+      // `chapter_number` is unique per book (uq_book_chapters_number), so a
+      // direct renumber collides whenever two chapters swap places. Shift every
+      // row out of the target range first, then assign the final 1..n numbers.
+      await connection.execute(
+        `UPDATE book_chapters SET chapter_number = chapter_number + ? WHERE book_id = ?`,
+        [ordered.length + 1, book.book_id],
       );
+      for (let index = 0; index < ordered.length; index += 1) {
+        await connection.execute(
+          `UPDATE book_chapters SET chapter_number = ?, sort_order = ? WHERE chapter_uuid = ? AND book_id = ?`,
+          [index + 1, index + 1, ordered[index], book.book_id],
+        );
+      }
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
     }
     return { status: 'ok' };
   }
 
 
 
-  async publishBook(userId: number, bookUuid: string) {
+  /**
+   * Gắn ảnh bìa cho sách từ một object do chính tác giả upload qua StorageService.
+   * Kiểm tra: ownership sách, ownership object, trạng thái upload, MIME ảnh,
+   * kích thước. Chỉ lưu storage key (object uuid) + MIME, không lưu URL tuỳ tiện.
+   */
+  async setCover(userId: number, bookUuid: string, objectUuid: string) {
     const book = await this.requireOwnedBook(userId, bookUuid);
-    const chapters = await this.db.query<ChapterRow[]>(
-      `SELECT chapter_id, word_count FROM book_chapters WHERE book_id = ? ORDER BY sort_order`,
+    const key = (objectUuid ?? '').trim();
+    if (!key) {
+      throw new BadRequestException('Thiếu mã tệp ảnh bìa.');
+    }
+
+    // findObject bên trong StorageService đã kiểm tra ownership của object.
+    const object = await this.storage.getObject(userId, key);
+    if (object.status !== 'complete') {
+      throw new BadRequestException('Tệp ảnh bìa chưa upload hoàn tất.');
+    }
+    if (!COVER_MIME_TYPES.has(object.mimeType.toLowerCase())) {
+      throw new BadRequestException('Ảnh bìa chỉ nhận JPEG, PNG, WebP hoặc GIF.');
+    }
+    if (object.sizeBytes > MAX_COVER_BYTES) {
+      throw new BadRequestException('Ảnh bìa tối đa 2 MiB.');
+    }
+
+    const rows = await this.db.query<{ cover_storage_key: string | null }[]>(
+      `SELECT cover_storage_key FROM books WHERE book_id = ? LIMIT 1`,
       [book.book_id],
     );
-    const totalWords = chapters.reduce((sum, c) => sum + c.word_count, 0);
+    const previousKey = rows[0]?.cover_storage_key ?? null;
 
     await this.db.query(
-      `UPDATE books
-       SET status = 'published', visibility = 'public', published_at = NOW(3), word_count = ?
-       WHERE book_id = ?`,
-      [totalWords, book.book_id],
+      `UPDATE books SET cover_storage_key = ?, cover_mime_type = ? WHERE book_id = ?`,
+      [object.objectUuid, object.mimeType, book.book_id],
     );
+    await this.storage.setObjectVisibility(userId, object.objectUuid, true);
+
+    if (previousKey && previousKey !== object.objectUuid) {
+      // Ảnh cũ không còn là bìa công khai: hạ cờ public (nếu vẫn thuộc user).
+      await this.storage.setObjectVisibility(userId, previousKey, false).catch(() => undefined);
+    }
+
+    return this.getBook(userId, bookUuid);
+  }
+
+  async removeCover(userId: number, bookUuid: string) {
+    const book = await this.requireOwnedBook(userId, bookUuid);
+    const rows = await this.db.query<{ cover_storage_key: string | null }[]>(
+      `SELECT cover_storage_key FROM books WHERE book_id = ? LIMIT 1`,
+      [book.book_id],
+    );
+    const previousKey = rows[0]?.cover_storage_key ?? null;
+
+    await this.db.query(
+      `UPDATE books SET cover_storage_key = NULL, cover_mime_type = NULL WHERE book_id = ?`,
+      [book.book_id],
+    );
+
+    if (previousKey) {
+      await this.storage.setObjectVisibility(userId, previousKey, false).catch(() => undefined);
+    }
+
+    return this.getBook(userId, bookUuid);
+  }
+
+  async publishBook(userId: number, bookUuid: string) {
+    const book = await this.requireOwnedBook(userId, bookUuid);
+    const chapters = await this.db.query<{ chapter_id: number; title: string; word_count: number }[]>(
+      `SELECT chapter_id, title, word_count FROM book_chapters WHERE book_id = ? ORDER BY sort_order, chapter_number`,
+      [book.book_id],
+    );
+    if (chapters.length === 0) {
+      throw new BadRequestException('Cần ít nhất một chương trước khi xuất bản.');
+    }
+    const totalWords = chapters.reduce((sum, c) => sum + Number(c.word_count ?? 0), 0);
+    if (totalWords === 0) {
+      throw new BadRequestException('Chương chưa có nội dung để xuất bản.');
+    }
+
+    const connection = await this.db.getConnection();
+    try {
+      await connection.beginTransaction();
+      await connection.execute(
+        `UPDATE books
+         SET status = 'published', visibility = 'public', published_at = NOW(3), word_count = ?
+         WHERE book_id = ?`,
+        [totalWords, book.book_id],
+      );
+      // Catalog exposes chapters of published books, so the chapter status must
+      // follow the book status instead of staying 'draft' forever.
+      await connection.execute(
+        `UPDATE book_chapters SET status = 'published' WHERE book_id = ?`,
+        [book.book_id],
+      );
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+
     await this.createSnapshot(userId, bookUuid, book.book_id);
     return this.getBook(userId, bookUuid, book.book_id);
   }
@@ -243,6 +420,201 @@ export class StudioService {
       [book.book_id],
     );
     return { data: rows };
+  }
+
+  async listAvailableCategories() {
+    const rows = await this.db.query<
+      { category_id: number; name: string; slug: string; parent_category_id: number | null }[]
+    >(
+      `SELECT category_id, name, slug, parent_category_id
+       FROM categories WHERE is_active = 1
+       ORDER BY sort_order, name`,
+    );
+    return {
+      data: rows.map((row) => ({
+        categoryId: row.category_id,
+        name: row.name,
+        slug: row.slug,
+        parentCategoryId: row.parent_category_id,
+      })),
+    };
+  }
+
+  async setCategories(userId: number, bookUuid: string, categoryIds: number[]) {
+    const book = await this.requireOwnedBook(userId, bookUuid);
+    const ids = [...new Set(categoryIds.filter((id) => Number.isInteger(id) && id > 0))];
+    if (ids.length > 5) {
+      throw new BadRequestException('Mỗi sách chỉ được chọn tối đa 5 danh mục.');
+    }
+    if (ids.length > 0) {
+      const placeholders = ids.map(() => '?').join(',');
+      const existing = await this.db.query<{ category_id: number }[]>(
+        `SELECT category_id FROM categories WHERE is_active = 1 AND category_id IN (${placeholders})`,
+        ids,
+      );
+      if (existing.length !== ids.length) {
+        throw new BadRequestException('Danh mục không hợp lệ.');
+      }
+    }
+
+    const connection = await this.db.getConnection();
+    try {
+      await connection.beginTransaction();
+      await connection.execute(`DELETE FROM book_categories WHERE book_id = ?`, [book.book_id]);
+      for (let index = 0; index < ids.length; index += 1) {
+        await connection.execute(
+          `INSERT INTO book_categories (book_id, category_id, is_primary) VALUES (?, ?, ?)`,
+          [book.book_id, ids[index], index === 0 ? 1 : 0],
+        );
+      }
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+    return this.getBook(userId, bookUuid, book.book_id);
+  }
+
+  async setTags(userId: number, bookUuid: string, tags: string[]) {
+    const book = await this.requireOwnedBook(userId, bookUuid);
+    const names = [...new Set(tags.map((tag) => tag.trim()).filter(Boolean))];
+    if (names.length > 10) {
+      throw new BadRequestException('Mỗi sách chỉ được gắn tối đa 10 nhãn.');
+    }
+    if (names.some((name) => name.length > 80)) {
+      throw new BadRequestException('Nhãn không được vượt quá 80 ký tự.');
+    }
+
+    const connection = await this.db.getConnection();
+    try {
+      await connection.beginTransaction();
+      await connection.execute(`DELETE FROM book_tags WHERE book_id = ?`, [book.book_id]);
+      for (const name of names) {
+        const [result] = await connection.execute<ResultSetHeader>(
+          `INSERT INTO tags (name, slug) VALUES (?, ?)
+           ON DUPLICATE KEY UPDATE tag_id = LAST_INSERT_ID(tag_id), name = VALUES(name)`,
+          [name, slugify(name) || `tag-${Date.now().toString(36)}`],
+        );
+        await connection.execute(`INSERT IGNORE INTO book_tags (book_id, tag_id) VALUES (?, ?)`, [
+          book.book_id,
+          result.insertId,
+        ]);
+      }
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+    return this.getBook(userId, bookUuid, book.book_id);
+  }
+
+  async unpublishBook(userId: number, bookUuid: string) {
+    const book = await this.requireOwnedBook(userId, bookUuid);
+    const connection = await this.db.getConnection();
+    try {
+      await connection.beginTransaction();
+      await connection.execute(
+        `UPDATE books SET status = 'draft', visibility = 'private', published_at = NULL WHERE book_id = ?`,
+        [book.book_id],
+      );
+      await connection.execute(`UPDATE book_chapters SET status = 'draft' WHERE book_id = ?`, [book.book_id]);
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+    return this.getBook(userId, bookUuid, book.book_id);
+  }
+
+  async getVersion(userId: number, bookUuid: string, versionNumber: number) {
+    const book = await this.requireOwnedBook(userId, bookUuid);
+    const rows = await this.db.query<{ version_number: number; snapshot_json: unknown }[]>(
+      `SELECT version_number, snapshot_json FROM book_versions
+       WHERE book_id = ? AND version_number = ? LIMIT 1`,
+      [book.book_id, versionNumber],
+    );
+    if (rows.length === 0) {
+      throw new NotFoundException('Không tìm thấy phiên bản.');
+    }
+    return { versionNumber: rows[0].version_number, snapshot: parseSnapshot(rows[0].snapshot_json) };
+  }
+
+  /**
+   * Restores book metadata and the content of chapters that still exist.
+   * Chapters created after the snapshot are kept (never deleted); chapters
+   * deleted since then cannot be recreated safely and are reported instead.
+   */
+  async restoreVersion(userId: number, bookUuid: string, versionNumber: number) {
+    const book = await this.requireOwnedBook(userId, bookUuid);
+    const rows = await this.db.query<{ snapshot_json: unknown }[]>(
+      `SELECT snapshot_json FROM book_versions WHERE book_id = ? AND version_number = ? LIMIT 1`,
+      [book.book_id, versionNumber],
+    );
+    if (rows.length === 0) {
+      throw new NotFoundException('Không tìm thấy phiên bản.');
+    }
+
+    const snapshot = parseSnapshot(rows[0].snapshot_json);
+    if (!snapshot) {
+      throw new NotFoundException('Không tìm thấy phiên bản.');
+    }
+
+    const current = await this.db.query<{ chapter_uuid: string }[]>(
+      `SELECT chapter_uuid FROM book_chapters WHERE book_id = ?`,
+      [book.book_id],
+    );
+    const existing = new Set(current.map((row) => row.chapter_uuid));
+    const snapshotChapters = snapshot.chapters ?? [];
+    const restorable = snapshotChapters.filter(
+      (chapter): chapter is { chapterUuid: string; title?: string; content?: string | null } =>
+        Boolean(chapter.chapterUuid) && existing.has(String(chapter.chapterUuid)),
+    );
+
+    const connection = await this.db.getConnection();
+    try {
+      await connection.beginTransaction();
+      await connection.execute(
+        `UPDATE books SET title = ?, subtitle = ?, description = ?, language = ? WHERE book_id = ?`,
+        [
+          (snapshot.title ?? book.title).slice(0, 500),
+          snapshot.subtitle ?? null,
+          snapshot.description ?? null,
+          snapshot.language ?? book.language,
+          book.book_id,
+        ],
+      );
+      for (const chapter of restorable) {
+        const content = chapter.content ?? '';
+        await connection.execute(
+          `UPDATE book_chapters SET title = ?, content = ?, word_count = ? WHERE chapter_uuid = ? AND book_id = ?`,
+          [
+            (chapter.title ?? 'Chương').slice(0, 300),
+            content,
+            countWords(content),
+            chapter.chapterUuid,
+            book.book_id,
+          ],
+        );
+      }
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+
+    return {
+      restoredChapters: restorable.length,
+      skippedChapters: snapshotChapters.length - restorable.length,
+      book: await this.getBook(userId, bookUuid, book.book_id),
+    };
   }
 
   private async createSnapshot(userId: number, bookUuid: string, bookId: number) {

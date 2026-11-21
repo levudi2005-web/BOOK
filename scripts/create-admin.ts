@@ -1,6 +1,5 @@
 import 'reflect-metadata';
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { NestFactory } from '@nestjs/core';
 import { AdminModule } from '../apps/api/src/admin/admin.module.js';
 import { AdminService } from '../apps/api/src/admin/admin.service.js';

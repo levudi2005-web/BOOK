@@ -1,3 +1,5 @@
+import { normalizeApiBase } from './api-url';
+
 export const siteConfig = {
   name: 'BOOKFORFREEDOM',
   tagline: 'Thư viện số cho những tâm hồn tự do.',
@@ -5,7 +7,7 @@ export const siteConfig = {
     'Nền tảng thư viện số cao cấp: viết, đọc, khám phá và chia sẻ sách trong một không gian yên tĩnh, có chiều sâu.',
   // Không hardcode domain production. Được inject qua env tại build time.
   url: process.env.NEXT_PUBLIC_APP_URL ?? '',
-  apiUrl: process.env.NEXT_PUBLIC_API_URL ?? '/api',
+  apiUrl: normalizeApiBase(process.env.NEXT_PUBLIC_API_URL),
 } as const;
 
 export type NavItem = {
@@ -18,6 +20,7 @@ export const primaryNav: NavItem[] = [
   { label: 'Khám phá', href: '/discover' },
   { label: 'Danh mục', href: '/categories' },
   { label: 'Thư viện', href: '/library' },
+  { label: 'Viết sách', href: '/write' },
   { label: 'Cộng đồng', href: '/community' },
 ];
 

@@ -29,6 +29,38 @@ export class AdminController {
     return { data: rows, meta: { page, limit, total: Number(total) } };
   }
 
+  @Get('stats')
+  @RequirePermission('user.read')
+  async stats() {
+    const [users] = await this.db.query<{ total: number; active: number | null }[]>(
+      `SELECT COUNT(*) AS total, SUM(status = 'active') AS active FROM users WHERE deleted_at IS NULL`,
+    );
+    const [books] = await this.db.query<{ total: number; published: number | null; draft: number | null }[]>(
+      `SELECT COUNT(*) AS total,
+              SUM(status = 'published') AS published,
+              SUM(status = 'draft') AS draft
+       FROM books WHERE deleted_at IS NULL`,
+    );
+    const [comments] = await this.db.query<{ total: number }[]>(
+      `SELECT COUNT(*) AS total FROM comments WHERE deleted_at IS NULL`,
+    );
+    const [storage] = await this.db.query<{ used: number | null; objects: number }[]>(
+      `SELECT COALESCE(SUM(size_bytes), 0) AS used, COUNT(*) AS objects
+       FROM storage_objects WHERE status = 'complete' AND deleted_at IS NULL`,
+    );
+
+    return {
+      users: { total: Number(users?.total ?? 0), active: Number(users?.active ?? 0) },
+      books: {
+        total: Number(books?.total ?? 0),
+        published: Number(books?.published ?? 0),
+        draft: Number(books?.draft ?? 0),
+      },
+      comments: Number(comments?.total ?? 0),
+      storage: { usedBytes: Number(storage?.used ?? 0), objects: Number(storage?.objects ?? 0) },
+    };
+  }
+
   @Get('books')
   @RequirePermission('book.read')
   async listBooks(@Query() query: Record<string, string>) {

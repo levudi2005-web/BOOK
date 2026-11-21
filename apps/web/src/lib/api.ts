@@ -1,4 +1,58 @@
-const base = process.env.NEXT_PUBLIC_API_URL ?? '/api';
+import {
+  ApiConfigurationError,
+  currentHostname,
+  joinApiUrl,
+  normalizeApiBase,
+  resolveApiBaseStatus,
+} from './api-url';
+
+/**
+ * Single source of truth for the API base URL. `NEXT_PUBLIC_API_URL` is inlined
+ * at build time; see `lib/api-url.ts` for why a Cloudflare Worker var alone is
+ * not enough to configure the browser bundle.
+ */
+const base = normalizeApiBase(process.env.NEXT_PUBLIC_API_URL);
+
+/** Builds an API URL from the configured base (also used for plain links). */
+export function apiUrl(path: string): string {
+  return joinApiUrl(base, path);
+}
+
+function assertApiBaseReachable(): void {
+  const status = resolveApiBaseStatus(process.env.NEXT_PUBLIC_API_URL, { hostname: currentHostname() });
+  if (status.misrouted) {
+    throw new ApiConfigurationError(status.message ?? 'API base URL is not configured for this deployment.');
+  }
+}
+
+export class ApiError extends Error {
+  /** HTTP status code returned by the API (0 when the response had no status). */
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
+export function isAuthError(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 401;
+}
+
+function parseJsonBody(text: string, response: Response, url: string): unknown {
+  if (!text) return null;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    const contentType = response.headers.get('content-type') ?? 'unknown';
+    throw new ApiError(
+      `API trả về dữ liệu không phải JSON (HTTP ${response.status}, content-type: ${contentType}) từ ${url}. ` +
+        'Kiểm tra NEXT_PUBLIC_API_URL của bản build.',
+      response.status,
+    );
+  }
+}
 
 export type ApiBook = {
   book_uuid: string;
@@ -61,11 +115,12 @@ export type BookQuery = {
 };
 
 async function get<T>(path: string): Promise<T> {
-  const response = await fetch(`${base}${path}`, { cache: 'no-store' });
+  const url = apiUrl(path);
+  const response = await fetch(url, { cache: 'no-store' });
   if (!response.ok) {
     throw new Error(`API request failed: ${response.status}`);
   }
-  return (await response.json()) as T;
+  return parseJsonBody(await response.text(), response, url) as T;
 }
 
 export async function fetchBooks(query: BookQuery = {}): Promise<BookListResponse> {
@@ -126,19 +181,24 @@ export function setAccessToken(token: string): void {
 type AuthRegisterResponse = { status: string; userId: number; recoveryKey: string };
 type AuthLoginResponse = { accessToken: string; expiresAt: string; userId: number };
 
+function apiErrorMessage(data: unknown, response: Response): string {
+  const message = (data as { message?: string | string[] } | null)?.message;
+  return Array.isArray(message) ? message.join(', ') : (message ?? `Request failed: ${response.status}`);
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  assertApiBaseReachable();
   const headers = new Headers(options.headers);
   if (options.body && !headers.has('content-type')) {
     headers.set('content-type', 'application/json');
   }
   const token = getAccessToken();
   if (token) headers.set('authorization', `Bearer ${token}`);
-  const response = await fetch(`${base}${path}`, { ...options, headers, cache: 'no-store' });
-  const text = await response.text();
-  const data = text ? (JSON.parse(text) as unknown) : null;
+  const url = apiUrl(path);
+  const response = await fetch(url, { ...options, headers, cache: 'no-store' });
+  const data = parseJsonBody(await response.text(), response, url);
   if (!response.ok) {
-    const message = (data as { message?: string | string[] } | null)?.message;
-    throw new Error(Array.isArray(message) ? message.join(', ') : (message ?? `Request failed: ${response.status}`));
+    throw new ApiError(apiErrorMessage(data, response), response.status);
   }
   return data as T;
 }
@@ -158,8 +218,12 @@ export async function login(identifier: string, password: string): Promise<AuthL
 }
 
 export async function logout(): Promise<void> {
-  await request('/auth/logout', { method: 'POST' });
-  setAccessToken('');
+  try {
+    await request('/auth/logout', { method: 'POST' });
+  } finally {
+    // Always drop the local session, even when the server call fails.
+    setAccessToken('');
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -209,6 +273,34 @@ export async function deleteObject(objectUuid: string): Promise<{ status: string
   return request(`/storage/objects/${objectUuid}`, { method: 'DELETE' });
 }
 
+/**
+ * Downloads a stored object with the bearer session. An `<a href>` cannot send
+ * the Authorization header, so the binary is fetched and handed to the browser
+ * as a blob instead of exposing an unauthenticated URL.
+ */
+export async function downloadStorageObject(objectUuid: string): Promise<Blob> {
+  assertApiBaseReachable();
+  const headers = new Headers();
+  const token = getAccessToken();
+  if (token) headers.set('authorization', `Bearer ${token}`);
+  const url = apiUrl(`/storage/objects/${encodeURIComponent(objectUuid)}/download`);
+  const response = await fetch(url, { headers, cache: 'no-store' });
+  if (!response.ok) {
+    const text = await response.text();
+    let message = `Request failed: ${response.status}`;
+    try {
+      const data = JSON.parse(text) as { message?: string | string[] };
+      const parsed = data?.message;
+      if (Array.isArray(parsed)) message = parsed.join(', ');
+      else if (parsed) message = parsed;
+    } catch {
+      // Non-JSON error body (e.g. an HTML page) — keep the generic message.
+    }
+    throw new ApiError(message, response.status);
+  }
+  return response.blob();
+}
+
 // ---------------------------------------------------------------------------
 // Author Studio
 // ---------------------------------------------------------------------------
@@ -225,20 +317,145 @@ export type StudioBook = {
   publishedAt: string | null;
 };
 
+export type StudioChapter = {
+  chapterUuid: string;
+  chapterNumber: number;
+  title: string;
+  content: string | null;
+  wordCount: number;
+  sortOrder: number;
+  status: string;
+};
+
+export type StudioBookDetail = StudioBook & {
+  chapters: StudioChapter[];
+  categories: StudioCategory[];
+  tags: string[];
+  coverStorageKey?: string | null;
+  coverMimeType?: string | null;
+};
+
+export type StudioCategory = {
+  categoryId: number;
+  name: string;
+  slug: string;
+  parentCategoryId?: number | null;
+};
+
+export type StudioVersionDetail = {
+  versionNumber: number;
+  snapshot: string | null;
+};
+
+export type StudioVersion = {
+  version_number: number;
+  title: string;
+  word_count: number;
+  created_at: string;
+};
+
+export type StudioBookInput = {
+  title?: string;
+  subtitle?: string;
+  description?: string;
+  language?: string;
+};
+
 export async function listMyBooks(): Promise<{ data: StudioBook[] }> {
   return request('/studio/books');
 }
 
-export async function createBook(input: { title: string; subtitle?: string; description?: string; language?: string }): Promise<StudioBook> {
+export async function createBook(input: StudioBookInput & { title: string }): Promise<StudioBookDetail> {
   return request('/studio/books', { method: 'POST', body: JSON.stringify(input) });
 }
 
-export async function createChapter(bookUuid: string, input: { title: string; content?: string }): Promise<{ chapterUuid: string }> {
-  return request(`/studio/books/${bookUuid}/chapters`, { method: 'POST', body: JSON.stringify(input) });
+export async function getStudioBook(bookUuid: string): Promise<StudioBookDetail> {
+  return request(`/studio/books/${encodeURIComponent(bookUuid)}`);
 }
 
-export async function publishBook(bookUuid: string): Promise<StudioBook> {
-  return request(`/studio/books/${bookUuid}/publish`, { method: 'POST' });
+export async function updateStudioBook(bookUuid: string, input: StudioBookInput): Promise<StudioBookDetail> {
+  return request(`/studio/books/${encodeURIComponent(bookUuid)}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function deleteStudioBook(bookUuid: string): Promise<{ status: string }> {
+  return request(`/studio/books/${encodeURIComponent(bookUuid)}`, { method: 'DELETE' });
+}
+
+export async function createChapter(
+  bookUuid: string,
+  input: { title: string; content?: string },
+): Promise<{ chapterUuid: string; chapterId: number; wordCount: number }> {
+  return request(`/studio/books/${encodeURIComponent(bookUuid)}/chapters`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function updateChapter(
+  chapterUuid: string,
+  input: { title?: string; content?: string },
+): Promise<{ chapterUuid: string; wordCount: number }> {
+  return request(`/studio/chapters/${encodeURIComponent(chapterUuid)}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function deleteChapter(chapterUuid: string): Promise<{ status: string }> {
+  return request(`/studio/chapters/${encodeURIComponent(chapterUuid)}`, { method: 'DELETE' });
+}
+
+export async function reorderChapters(bookUuid: string, orderedUuids: string[]): Promise<{ status: string }> {
+  return request(`/studio/books/${encodeURIComponent(bookUuid)}/chapters/reorder`, {
+    method: 'POST',
+    body: JSON.stringify({ orderedUuids }),
+  });
+}
+
+export async function publishBook(bookUuid: string): Promise<StudioBookDetail> {
+  return request(`/studio/books/${encodeURIComponent(bookUuid)}/publish`, { method: 'POST' });
+}
+
+export async function listBookVersions(bookUuid: string): Promise<{ data: StudioVersion[] }> {
+  return request(`/studio/books/${encodeURIComponent(bookUuid)}/versions`);
+}
+
+export async function getBookVersion(bookUuid: string, versionNumber: number): Promise<StudioVersionDetail> {
+  return request(`/studio/books/${encodeURIComponent(bookUuid)}/versions/${versionNumber}`);
+}
+
+export async function restoreBookVersion(
+  bookUuid: string,
+  versionNumber: number,
+): Promise<{ restoredChapters: number; skippedChapters: number; book: StudioBookDetail }> {
+  return request(`/studio/books/${encodeURIComponent(bookUuid)}/versions/${versionNumber}/restore`, {
+    method: 'POST',
+  });
+}
+
+export async function unpublishBook(bookUuid: string): Promise<StudioBookDetail> {
+  return request(`/studio/books/${encodeURIComponent(bookUuid)}/unpublish`, { method: 'POST' });
+}
+
+export async function listStudioCategories(): Promise<{ data: StudioCategory[] }> {
+  return request('/studio/categories');
+}
+
+export async function setStudioCategories(bookUuid: string, categoryIds: number[]): Promise<StudioBookDetail> {
+  return request(`/studio/books/${encodeURIComponent(bookUuid)}/categories`, {
+    method: 'PUT',
+    body: JSON.stringify({ categoryIds }),
+  });
+}
+
+export async function setStudioTags(bookUuid: string, tags: string[]): Promise<StudioBookDetail> {
+  return request(`/studio/books/${encodeURIComponent(bookUuid)}/tags`, {
+    method: 'PUT',
+    body: JSON.stringify({ tags }),
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -287,18 +504,18 @@ export function setAdminToken(token: string): void {
 }
 
 async function adminRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
+  assertApiBaseReachable();
   const headers = new Headers(options.headers);
   if (options.body && !headers.has('content-type')) {
     headers.set('content-type', 'application/json');
   }
   const token = getAdminToken();
   if (token) headers.set('authorization', `Bearer ${token}`);
-  const response = await fetch(`${base}${path}`, { ...options, headers, cache: 'no-store' });
-  const text = await response.text();
-  const data = text ? (JSON.parse(text) as unknown) : null;
+  const url = apiUrl(path);
+  const response = await fetch(url, { ...options, headers, cache: 'no-store' });
+  const data = parseJsonBody(await response.text(), response, url);
   if (!response.ok) {
-    const message = (data as { message?: string | string[] } | null)?.message;
-    throw new Error(Array.isArray(message) ? message.join(', ') : (message ?? `Request failed: ${response.status}`));
+    throw new ApiError(apiErrorMessage(data, response), response.status);
   }
   return data as T;
 }
@@ -316,8 +533,134 @@ export async function adminMe(): Promise<{ username: string; email: string; role
   return adminRequest('/admin/auth/me');
 }
 
+// ---------------------------------------------------------------------------
+// Cover ảnh bìa (StorageService): upload qua /storage/objects rồi gắn vào sách.
+// ---------------------------------------------------------------------------
+
+/** Ảnh bìa công khai — backend chỉ trả khi sách published + public. */
+export function publicCoverUrl(slug: string): string {
+  return apiUrl(`/books/${encodeURIComponent(slug)}/cover`);
+}
+
+export async function setBookCover(bookUuid: string, objectUuid: string): Promise<StudioBookDetail> {
+  return request(`/studio/books/${bookUuid}/cover`, {
+    method: 'POST',
+    body: JSON.stringify({ objectUuid }),
+  });
+}
+
+export async function removeBookCover(bookUuid: string): Promise<StudioBookDetail> {
+  return request(`/studio/books/${bookUuid}/cover`, { method: 'DELETE' });
+}
+
+// ---------------------------------------------------------------------------
+// Reading history
+// ---------------------------------------------------------------------------
+
+export type ReadingHistoryItem = {
+  history_id: number;
+  started_at: string;
+  pages_read: number | null;
+  book_uuid: string;
+  slug: string;
+  title: string;
+  chapter_uuid: string | null;
+  chapter_number: number | null;
+  chapter_title: string | null;
+};
+
+export async function listHistory(): Promise<{ data: ReadingHistoryItem[] }> {
+  return request('/history');
+}
+
+// ---------------------------------------------------------------------------
+// Comments (edit/delete theo ownership)
+// ---------------------------------------------------------------------------
+
+export async function updateComment(commentUuid: string, body: string): Promise<{ commentUuid: string; body: string }> {
+  return request(`/comments/${commentUuid}`, { method: 'PATCH', body: JSON.stringify({ body }) });
+}
+
+export async function deleteComment(commentUuid: string): Promise<{ status: string }> {
+  return request(`/comments/${commentUuid}`, { method: 'DELETE' });
+}
+
+// ---------------------------------------------------------------------------
+// Email verification / password reset (SMTP adapter phía backend)
+// ---------------------------------------------------------------------------
+
+export async function requestEmailVerification(): Promise<{ status: string; delivery: string }> {
+  return request('/auth/email/verification/request', { method: 'POST' });
+}
+
+export async function confirmEmailVerification(token: string): Promise<{ status: string }> {
+  return request('/auth/email/verification/confirm', { method: 'POST', body: JSON.stringify({ token }) });
+}
+
+export async function requestPasswordReset(identifier: string): Promise<{ status: string }> {
+  return request('/auth/password/forgot', { method: 'POST', body: JSON.stringify({ identifier }) });
+}
+
+export async function resetPassword(token: string, password: string): Promise<{ status: string }> {
+  return request('/auth/password/reset', { method: 'POST', body: JSON.stringify({ token, password }) });
+}
+
+// ---------------------------------------------------------------------------
+// Admin
+// ---------------------------------------------------------------------------
+
 export async function adminListUsers(): Promise<{ data: Array<Record<string, unknown>>; meta: { total: number } }> {
   return adminRequest('/admin/users');
+}
+
+export type AdminStats = {
+  users: { total: number; active: number };
+  books: { total: number; published: number; draft: number };
+  comments: number;
+  storage: { usedBytes: number; objects: number };
+};
+
+export type AdminListMeta = { page: number; limit: number; total: number };
+
+export async function adminStats(): Promise<AdminStats> {
+  return adminRequest('/admin/stats');
+}
+
+export async function adminUsers(page = 1, limit = 20): Promise<{ data: Array<Record<string, unknown>>; meta: AdminListMeta }> {
+  return adminRequest(`/admin/users?page=${page}&limit=${limit}`);
+}
+
+export async function adminBooks(page = 1, limit = 20): Promise<{ data: Array<Record<string, unknown>>; meta: AdminListMeta }> {
+  return adminRequest(`/admin/books?page=${page}&limit=${limit}`);
+}
+
+// ---------------------------------------------------------------------------
+// Profile (session-scoped)
+// ---------------------------------------------------------------------------
+
+export type MyProfile = {
+  userId: number;
+  userUuid: string;
+  username: string;
+  email: string;
+  status: string;
+  createdAt: string;
+  lastLoginAt: string | null;
+  profile: { displayName: string; bio: string; websiteUrl: string; isPublic: boolean };
+  stats: { library: number; reading: number; books: number; comments: number };
+};
+
+export async function getMyProfile(): Promise<MyProfile> {
+  return request('/me');
+}
+
+export async function updateMyProfile(input: {
+  displayName?: string;
+  bio?: string;
+  websiteUrl?: string;
+  isPublic?: boolean;
+}): Promise<MyProfile> {
+  return request('/me', { method: 'PATCH', body: JSON.stringify(input) });
 }
 
 export async function searchBooks(q: string): Promise<{ hits: Array<Record<string, unknown>>; estimatedTotalHits: number }> {
@@ -361,11 +704,13 @@ export async function getProgress(slug: string): Promise<{ percentComplete: numb
   return request(`/progress/${slug}`);
 }
 
-export async function saveProgress(slug: string, input: { percentComplete?: number; isCompleted?: boolean; chapterId?: number }): Promise<{ percentComplete: number; isCompleted: boolean }> {
+export async function saveProgress(slug: string, input: { percentComplete?: number; isCompleted?: boolean; chapterId?: number; chapterUuid?: string }): Promise<{ percentComplete: number; isCompleted: boolean }> {
   return request(`/progress/${slug}`, { method: 'PUT', body: JSON.stringify(input) });
 }
 
-export async function listComments(slug: string): Promise<{ data: Array<{ comment_uuid: string; body: string; username: string; created_at: string }> }> {
+export async function listComments(slug: string): Promise<{
+  data: Array<{ comment_uuid: string; body: string; username: string; user_uuid: string; created_at: string }>;
+}> {
   return request(`/books/${slug}/comments`);
 }
 

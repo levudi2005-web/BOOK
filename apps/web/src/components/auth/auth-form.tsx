@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Logo } from '@/components/logo';
@@ -8,7 +8,16 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input, Label } from '@/components/ui/field';
 import { useToast } from '@/components/toast';
-import { login, register, setAccessToken } from '@/lib/api';
+import {
+  confirmEmailVerification,
+  getAccessToken,
+  login,
+  register,
+  requestEmailVerification,
+  requestPasswordReset,
+  resetPassword,
+  setAccessToken,
+} from '@/lib/api';
 
 type Mode = 'login' | 'register' | 'forgot' | 'reset' | 'verify';
 
@@ -45,7 +54,52 @@ export function AuthForm({ mode }: { mode: Mode }) {
   const router = useRouter();
   const [values, setValues] = useState({ name: '', email: '', password: '', confirm: '' });
   const [recoveryKey, setRecoveryKey] = useState('');
+  const [token, setToken] = useState('');
+  const [notice, setNotice] = useState('');
+  const [noticeTone, setNoticeTone] = useState<'info' | 'error'>('info');
   const [loading, setLoading] = useState(false);
+  const verifyStarted = useRef(false);
+
+  /**
+   * Token nằm trong query của link gửi qua email. Đọc trực tiếp trên client
+   * (không dùng useSearchParams) để trang vẫn prerender được trên Cloudflare.
+   */
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    setToken(params.get('token') ?? '');
+  }, []);
+
+  /** Mở link ?token=... → xác minh ngay, chỉ chạy một lần cho mỗi token. */
+  useEffect(() => {
+    if (mode !== 'verify' || !token || verifyStarted.current) return;
+    verifyStarted.current = true;
+    let active = true;
+    setLoading(true);
+    confirmEmailVerification(token)
+      .then(() => {
+        if (active) {
+          setNoticeTone('info');
+          setNotice('Email đã được xác minh thành công. Bạn có thể đăng nhập.');
+        }
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          setNoticeTone('error');
+          setNotice(
+            error instanceof Error
+              ? error.message
+              : 'Liên kết xác minh không hợp lệ hoặc đã hết hạn.',
+          );
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [mode, token]);
 
   function set(key: keyof typeof values) {
     return (event: React.ChangeEvent<HTMLInputElement>) =>
@@ -57,7 +111,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
     setLoading(true);
     try {
       if (mode === 'login') {
-        const result = await login(values.email, values.password);
+        const result = await login(values.email.trim(), values.password);
         setAccessToken(result.accessToken);
         toast('Đăng nhập thành công.', 'default');
         router.push('/library');
@@ -69,12 +123,55 @@ export function AuthForm({ mode }: { mode: Mode }) {
           toast('Mật khẩu xác nhận không khớp.', 'default');
           return;
         }
-        const result = await register(values.name, values.email, values.password);
+        const result = await register(values.name, values.email.trim(), values.password);
         setRecoveryKey(result.recoveryKey);
         toast('Tài khoản đã được tạo.', 'default');
         return;
       }
-      toast('Tính năng này chưa được kết nối.', 'default');
+      if (mode === 'forgot') {
+        await requestPasswordReset(values.email.trim());
+        setNoticeTone('info');
+        // Phản hồi trung tính: không tiết lộ tài khoản có tồn tại hay không.
+        setNotice(
+          'Nếu email tồn tại trong hệ thống, chúng tôi đã gửi liên kết đặt lại mật khẩu. Vui lòng kiểm tra hộp thư.',
+        );
+        return;
+      }
+      if (mode === 'reset') {
+        if (!token) {
+          setNoticeTone('error');
+          setNotice('Liên kết đặt lại mật khẩu không hợp lệ hoặc đã hết hạn.');
+          return;
+        }
+        if (values.password !== values.confirm) {
+          setNoticeTone('error');
+          setNotice('Mật khẩu xác nhận không khớp.');
+          return;
+        }
+        await resetPassword(token, values.password);
+        setNoticeTone('info');
+        setNotice('Mật khẩu đã được cập nhật. Bạn có thể đăng nhập bằng mật khẩu mới.');
+        toast('Đặt lại mật khẩu thành công.', 'default');
+        return;
+      }
+      if (mode === 'verify') {
+        if (token) return;
+        if (!getAccessToken()) {
+          setNoticeTone('error');
+          setNotice('Vui lòng đăng nhập để gửi lại email xác minh.');
+          return;
+        }
+        const result = await requestEmailVerification();
+        setNoticeTone(result.delivery === 'sent' ? 'info' : 'error');
+        setNotice(
+          result.delivery === 'sent'
+            ? 'Đã gửi lại email xác minh. Vui lòng kiểm tra hộp thư.'
+            : result.delivery === 'already_verified'
+              ? 'Email của bạn đã được xác minh trước đó.'
+              : 'Hệ thống email chưa được cấu hình nên chưa thể gửi. Vui lòng thử lại sau.',
+        );
+        return;
+      }
     } catch (error) {
       toast(error instanceof Error ? error.message : 'Đã có lỗi xảy ra.', 'default');
     } finally {
@@ -103,8 +200,15 @@ export function AuthForm({ mode }: { mode: Mode }) {
 
           {mode !== 'reset' && mode !== 'verify' ? (
             <div>
-              <Label htmlFor="auth-email">Email</Label>
-              <Input id="auth-email" type="email" value={values.email} onChange={set('email')} autoComplete="email" required />
+              <Label htmlFor="auth-email">{mode === 'login' ? 'Email hoặc tên đăng nhập' : 'Email'}</Label>
+              <Input
+                id="auth-email"
+                type={mode === 'login' ? 'text' : 'email'}
+                value={values.email}
+                onChange={set('email')}
+                autoComplete={mode === 'login' ? 'username' : 'email'}
+                required
+              />
             </div>
           ) : null}
 
@@ -129,16 +233,31 @@ export function AuthForm({ mode }: { mode: Mode }) {
             </div>
           ) : null}
 
-          {mode === 'verify' ? (
+          {mode === 'verify' && !token ? (
             <p className="rounded-xl bg-surface p-4 text-center text-sm text-muted-foreground">
-              Chúng tôi đã gửi một liên kết xác minh đến email của bạn. Vui lòng kiểm tra hộp thư.
+              Liên kết xác minh đã được gửi tới email của bạn. Nếu chưa nhận được, hãy đăng nhập và gửi lại.
             </p>
           ) : null}
 
-          <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? 'Đang xử lý…' : copy[mode].submit}
-          </Button>
+          {mode !== 'verify' || !token ? (
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? 'Đang xử lý…' : copy[mode].submit}
+            </Button>
+          ) : null}
         </form>
+
+        {notice ? (
+          <p
+            role="status"
+            className={
+              noticeTone === 'error'
+                ? 'mt-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800'
+                : 'mt-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900'
+            }
+          >
+            {notice}
+          </p>
+        ) : null}
 
         {recoveryKey ? (
           <div className="mt-5 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">

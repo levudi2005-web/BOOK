@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 /* Bootstrap an admin account using the COMPILED dist (decorator metadata intact). */
 require('reflect-metadata');
 const { readFileSync } = require('node:fs');

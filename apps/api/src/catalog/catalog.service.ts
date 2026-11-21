@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { DatabaseService, type QueryValue } from '../database/database.service.js';
+import { StorageService } from '../storage/storage.service.js';
 
 type Row = Record<string, unknown>;
 
@@ -14,7 +15,10 @@ const sortOptions: Record<string, string> = {
 
 @Injectable()
 export class CatalogService {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly storage: StorageService,
+  ) {}
 
   async listBooks(query: Record<string, string>) {
     const page = Math.max(1, Number.parseInt(query.page ?? '1', 10) || 1);
@@ -150,7 +154,30 @@ export class CatalogService {
     return { data: rows };
   }
 
-  /** Public chapters for the reader (published book). */
+  /** Public chapters for the reader (published book, published chapters only). */
+  /**
+   * Ảnh bìa chỉ phục vụ khi: sách thoả `publicStatusFilter` (đã publish/approved,
+   * visibility public, chưa xoá) VÀ object storage được đánh dấu public.
+   * Truy cập trực tiếp object của user khác qua route này là không thể.
+   */
+  async getPublicCover(slug: string) {
+    const rows = await this.db.query<{ cover_storage_key: string | null }[]>(
+      `SELECT b.cover_storage_key
+       FROM books b
+       WHERE b.slug = ? AND ${publicStatusFilter}
+       LIMIT 1`,
+      [slug],
+    );
+    if (rows.length === 0) {
+      throw new NotFoundException('Không tìm thấy sách.');
+    }
+    const key = rows[0].cover_storage_key;
+    if (!key) {
+      throw new NotFoundException('Sách chưa có ảnh bìa.');
+    }
+    return this.storage.streamPublicObject(key);
+  }
+
   async getBookChapters(slug: string) {
     const books = await this.db.query<{ book_id: number }[]>(
       `SELECT b.book_id FROM books b WHERE b.slug = ? AND ${publicStatusFilter} LIMIT 1`,
@@ -160,7 +187,7 @@ export class CatalogService {
     const rows = await this.db.query<Row[]>(
       `SELECT chapter_uuid, chapter_number, title, content, word_count, sort_order
        FROM book_chapters
-       WHERE book_id = ?
+       WHERE book_id = ? AND status = 'published'
        ORDER BY sort_order, chapter_number`,
       [books[0].book_id],
     );

@@ -59,6 +59,66 @@ export class StudioController {
     return this.studio.listVersions(userId, bookUuid);
   }
 
+  @Get('books/:bookUuid/versions/:versionNumber')
+  getVersion(
+    @CurrentUserId() userId: number,
+    @Param('bookUuid') bookUuid: string,
+    @Param('versionNumber') versionNumber: string,
+  ) {
+    return this.studio.getVersion(userId, bookUuid, Number.parseInt(versionNumber, 10) || 0);
+  }
+
+  @Post('books/:bookUuid/versions/:versionNumber/restore')
+  restoreVersion(
+    @CurrentUserId() userId: number,
+    @Param('bookUuid') bookUuid: string,
+    @Param('versionNumber') versionNumber: string,
+  ) {
+    return this.studio.restoreVersion(userId, bookUuid, Number.parseInt(versionNumber, 10) || 0);
+  }
+
+  @Post('books/:bookUuid/unpublish')
+  unpublishBook(@CurrentUserId() userId: number, @Param('bookUuid') bookUuid: string) {
+    return this.studio.unpublishBook(userId, bookUuid);
+  }
+
+  @Post('books/:bookUuid/cover')
+  setCover(
+    @CurrentUserId() userId: number,
+    @Param('bookUuid') bookUuid: string,
+    @Body() body: { objectUuid?: string },
+  ) {
+    return this.studio.setCover(userId, bookUuid, body.objectUuid ?? '');
+  }
+
+  @Delete('books/:bookUuid/cover')
+  removeCover(@CurrentUserId() userId: number, @Param('bookUuid') bookUuid: string) {
+    return this.studio.removeCover(userId, bookUuid);
+  }
+
+  @Get('categories')
+  listCategories() {
+    return this.studio.listAvailableCategories();
+  }
+
+  @Put('books/:bookUuid/categories')
+  setCategories(
+    @CurrentUserId() userId: number,
+    @Param('bookUuid') bookUuid: string,
+    @Body() body: { categoryIds?: number[] },
+  ) {
+    return this.studio.setCategories(userId, bookUuid, body.categoryIds ?? []);
+  }
+
+  @Put('books/:bookUuid/tags')
+  setTags(
+    @CurrentUserId() userId: number,
+    @Param('bookUuid') bookUuid: string,
+    @Body() body: { tags?: string[] },
+  ) {
+    return this.studio.setTags(userId, bookUuid, body.tags ?? []);
+  }
+
   @Post('books/:bookUuid/chapters')
   createChapter(
     @CurrentUserId() userId: number,
