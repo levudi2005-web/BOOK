@@ -61,6 +61,7 @@ export function BookDetail() {
     return () => {
       active = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug]);
 
   async function onAddToLibrary() {
