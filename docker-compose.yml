@@ -27,48 +27,6 @@ services:
       retries: 30
       start_period: 20s
 
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-replace-this-redis-password}
-    command:
-      - redis-server
-      - --appendonly
-      - "yes"
-      - --requirepass
-      - ${REDIS_PASSWORD:-replace-this-redis-password}
-    ports:
-      - "127.0.0.1:6379:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  minio:
-    image: bitnamilegacy/minio:latest
-    restart: unless-stopped
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-bff_minio}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-replace-this-minio-password}
-      MINIO_API_PORT_NUMBER: 9000
-      MINIO_CONSOLE_PORT_NUMBER: 9001
-      TZ: ${TZ:-UTC}
-    ports:
-      - "127.0.0.1:${MINIO_PORT:-9000}:9000"
-      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
-    volumes:
-      - minio_data:/bitnami/minio/data
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:9000/minio/health/live"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 15s
-
   meilisearch:
     image: getmeili/meilisearch:v1.12
     restart: unless-stopped
@@ -122,10 +80,6 @@ services:
       BOOKADMIN_DB_PASSWORD: ${BOOKADMIN_DB_PASSWORD:-replace-this-bookadmin-password}
       DATABASE_URL: mysql://${BOOKUSER_DB_USER:-app_bookuser}:${BOOKUSER_DB_PASSWORD:-replace-this-bookuser-password}@mariadb:3306/bookuser
       BOOKADMIN_DATABASE_URL: mysql://${BOOKADMIN_DB_USER:-app_bookadmin}:${BOOKADMIN_DB_PASSWORD:-replace-this-bookadmin-password}@mariadb:3306/bookadmin
-      REDIS_URL: redis://:${REDIS_PASSWORD:-replace-this-redis-password}@redis:6379
-      MINIO_ENDPOINT: minio
-      MINIO_PORT: 9000
-      MINIO_USE_SSL: "false"
       MEILI_HOST: http://meilisearch:7700
       MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-replace-this-meilisearch-development-key}
       SMTP_HOST: ${SMTP_HOST:-}
@@ -139,35 +93,7 @@ services:
     depends_on:
       mariadb:
         condition: service_healthy
-      redis:
-        condition: service_healthy
-
-  web:
-    build:
-      context: .
-      dockerfile: apps/web/Dockerfile
-      args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://freedombook.duckdns.org/api}
-    restart: unless-stopped
-    environment:
-      NODE_ENV: production
-      HOSTNAME: 0.0.0.0
-      PORT: 3000
-      TZ: ${TZ:-UTC}
-      APP_ENV: ${APP_ENV:-production}
-      APP_NAME: ${APP_NAME:-BOOKFORFREEDOM}
-      APP_URL: ${APP_URL:-https://freedombook.duckdns.org}
-      API_PUBLIC_URL: ${API_PUBLIC_URL:-https://freedombook.duckdns.org/api}
-      WEB_PUBLIC_URL: ${WEB_PUBLIC_URL:-https://freedombook.duckdns.org}
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://freedombook.duckdns.org/api}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-    ports:
-      - "127.0.0.1:3000:3000"
-    depends_on:
-      - api
 
 volumes:
   mariadb_data:
-  redis_data:
-  minio_data:
   meilisearch_data:
