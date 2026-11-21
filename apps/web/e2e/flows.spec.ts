@@ -95,11 +95,14 @@ async function uiLogin(page: Page, identifier: string, password: string): Promis
 }
 
 async function uiLogout(page: Page): Promise<void> {
-  const logoutButton = page.getByRole('button', { name: 'Đăng xuất' }).first();
-  if (!(await logoutButton.isVisible().catch(() => false))) {
-    await page.getByRole('button', { name: 'Mở menu' }).click();
+  if ((page.viewportSize()?.width ?? 1024) < 768) {
+    await page.goto('/profile');
+    await page.getByRole('button', { name: /Đăng xuất & đổi tài khoản/ }).click();
+  } else {
+  const accountButton = page.getByRole('button', { name: 'Tài khoản' }).first();
+    await accountButton.click();
+    await page.getByRole('button', { name: 'Đăng xuất', exact: true }).click();
   }
-  await page.getByRole('button', { name: 'Đăng xuất' }).first().click();
   await page.waitForFunction((key) => window.localStorage.getItem(key) === null, TOKEN_KEY, {
     timeout: 20_000,
   });
@@ -184,7 +187,7 @@ test('studio: autosave chương, tải ảnh bìa, publish hiển thị công kh
   });
   await expect(page.getByAltText('Ảnh bìa hiện tại')).toBeVisible({ timeout: 30_000 });
 
-  const published = await json(request, `/studio/books/${bookUuid}/publish`, 'POST', undefined, token);
+  const published = await json(request, `/studio/books/${bookUuid}/publish`, 'POST', { scope: 'community', authorName: 'Tác giả E2E', publicationYear: 2026 }, token);
   expect(published.status).toBe(201);
   const slug = String(published.body.slug);
 
@@ -283,7 +286,7 @@ test('office writer: rich text persists and exports a PDF', async ({ page, reque
 
 test('comments: thêm, sửa, xoá bình luận của chính mình', async ({ page, request }) => {
   const { token, bookUuid } = await seedAuthor(request);
-  const published = await json(request, `/studio/books/${bookUuid}/publish`, 'POST', undefined, token);
+  const published = await json(request, `/studio/books/${bookUuid}/publish`, 'POST', { scope: 'community', authorName: 'Tác giả E2E', publicationYear: 2026 }, token);
   const slug = String(published.body.slug);
 
   await signIn(page, token);
@@ -305,7 +308,7 @@ test('comments: thêm, sửa, xoá bình luận của chính mình', async ({ pa
 
 test('catalog + search: sách đã publish xuất hiện, trang search phản hồi', async ({ page, request }) => {
   const { token, bookUuid, title } = await seedAuthor(request);
-  await json(request, `/studio/books/${bookUuid}/publish`, 'POST', undefined, token);
+  await json(request, `/studio/books/${bookUuid}/publish`, 'POST', { scope: 'community', authorName: 'Tác giả E2E', publicationYear: 2026 }, token);
 
   await page.goto(`/discover?q=${encodeURIComponent(title)}`);
   await expect(page.getByText(title).first()).toBeVisible({ timeout: 20_000 });
@@ -392,7 +395,7 @@ test('responsive: không tràn ngang trên thiết bị nhỏ', async ({ page })
 test('auth UI: đăng nhập bằng username, giữ phiên sau reload và đăng xuất', async ({ page, request }) => {
   const { username, password } = await seedAuthor(request);
   await uiLogin(page, username, password);
-  await expect(page.getByText('Kệ sách của tôi')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Kệ sách của tôi', exact: true })).toBeVisible();
 
   await page.goto('/profile');
   await expect(page.getByRole('heading', { level: 1 })).toContainText(username);
@@ -446,6 +449,10 @@ test('studio UI: tạo sách, sửa thông tin, chương, autosave, reorder, pub
   await expect(page.locator('ol li').first()).toContainText('Chương 2', { timeout: 20_000 });
 
   await page.getByRole('button', { name: 'Xuất bản', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Thông tin xuất bản' }).getByLabel('Tên tác giả *').fill('Tác giả E2E');
+  await page.getByRole('dialog', { name: 'Thông tin xuất bản' }).getByLabel('Năm xuất bản *').fill('2026');
+  await page.getByText('Community', { exact: true }).click();
+  await page.getByRole('button', { name: 'Xác nhận xuất bản' }).click();
   await expect(page.getByText('Đã xuất bản').first()).toBeVisible({ timeout: 25_000 });
 
   const publishedBooks = await json(request, `/books?q=${encodeURIComponent(`${title} (sửa)`)}`, 'GET');
@@ -459,7 +466,7 @@ test('studio UI: tạo sách, sửa thông tin, chương, autosave, reorder, pub
 
 test('reader + library + history: đọc sách, lưu thư viện và deep-link đúng chương', async ({ page, request }, testInfo) => {
   const { token, bookUuid, title } = await seedBookWithTwoChapters(request);
-  const published = await json(request, `/studio/books/${bookUuid}/publish`, 'POST', undefined, token);
+  const published = await json(request, `/studio/books/${bookUuid}/publish`, 'POST', { scope: 'community', authorName: 'Tác giả E2E', publicationYear: 2026 }, token);
   expect(published.status).toBe(201);
   const slug = String(published.body.slug);
 
@@ -514,7 +521,7 @@ test('admin UI: đăng nhập quản trị, xem dashboard và danh sách ngườ
 
 test('comments UI: người khác không thấy nút sửa/xoá bình luận của chủ sở hữu', async ({ page, request }) => {
   const author = await seedAuthor(request);
-  const published = await json(request, `/studio/books/${author.bookUuid}/publish`, 'POST', undefined, author.token);
+  const published = await json(request, `/studio/books/${author.bookUuid}/publish`, 'POST', { scope: 'community', authorName: 'Tác giả E2E', publicationYear: 2026 }, author.token);
   const slug = String(published.body.slug);
 
   const other = await seedAuthor(request);

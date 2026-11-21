@@ -73,6 +73,9 @@ export type ApiBook = {
   view_count: number;
   download_count: number;
   published_at: string | null;
+  author_name: string | null;
+  publisher_name: string | null;
+  publication_year: number | null;
 };
 
 export type ApiCategory = {
@@ -360,6 +363,11 @@ export type StudioBook = {
   language: string;
   status: string;
   visibility: string;
+  publicationScope: string;
+  authorName: string | null;
+  publisherName: string | null;
+  publicationYear: number | null;
+  coverStorageKey?: string | null;
   publishedAt: string | null;
 };
 
@@ -405,6 +413,9 @@ export type StudioBookInput = {
   subtitle?: string;
   description?: string;
   language?: string;
+  authorName?: string;
+  publisherName?: string;
+  publicationYear?: number;
 };
 
 export async function listMyBooks(): Promise<{ data: StudioBook[] }> {
@@ -461,8 +472,14 @@ export async function reorderChapters(bookUuid: string, orderedUuids: string[]):
   });
 }
 
-export async function publishBook(bookUuid: string): Promise<StudioBookDetail> {
-  return request(`/studio/books/${encodeURIComponent(bookUuid)}/publish`, { method: 'POST' });
+export async function publishBook(
+  bookUuid: string,
+  input: { scope: 'private' | 'community'; authorName: string; publisherName?: string; publicationYear: number },
+): Promise<StudioBookDetail> {
+  return request(`/studio/books/${encodeURIComponent(bookUuid)}/publish`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
 }
 
 export async function listBookVersions(bookUuid: string): Promise<{ data: StudioVersion[] }> {
@@ -657,6 +674,28 @@ export async function requestPasswordReset(identifier: string): Promise<{ status
 
 export async function resetPassword(token: string, password: string): Promise<{ status: string }> {
   return request('/auth/password/reset', { method: 'POST', body: JSON.stringify({ token, password }) });
+}
+
+export async function changePassword(input: {
+  currentPassword: string;
+  recoveryKey: string;
+  newPassword: string;
+}): Promise<{ status: string }> {
+  return request('/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function resetPasswordWithRecoveryKey(
+  identifier: string,
+  recoveryKey: string,
+  newPassword: string,
+): Promise<{ status: string }> {
+  return request('/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify({ identifier, recoveryKey, newPassword }),
+  });
 }
 
 // ---------------------------------------------------------------------------

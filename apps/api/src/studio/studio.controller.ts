@@ -50,8 +50,12 @@ export class StudioController {
   }
 
   @Post('books/:bookUuid/publish')
-  publishBook(@CurrentUserId() userId: number, @Param('bookUuid') bookUuid: string) {
-    return this.studio.publishBook(userId, bookUuid);
+  publishBook(
+    @CurrentUserId() userId: number,
+    @Param('bookUuid') bookUuid: string,
+    @Body() body: { scope?: string; authorName?: string; publisherName?: string; publicationYear?: number },
+  ) {
+    return this.studio.publishBook(userId, bookUuid, body);
   }
 
   @Get('books/:bookUuid/versions')

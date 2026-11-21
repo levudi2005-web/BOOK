@@ -1,17 +1,53 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { EmptyState } from '@/components/ui/empty-state';
 import { LibraryIcon } from '@/components/icons';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/toast';
-import { listLibrary, removeFromLibrary, updateLibrary, type LibraryItem } from '@/lib/api';
+import { downloadStorageObject, listLibrary, removeFromLibrary, updateLibrary, type LibraryItem } from '@/lib/api';
+import { Input, Label, Select } from '@/components/ui/field';
+
+function LibraryBookCover({ item }: { item: LibraryItem }) {
+  const [src, setSrc] = useState('');
+  useEffect(() => {
+    let active = true;
+    let objectUrl = '';
+    if (!item.cover_storage_key) {
+      setSrc('');
+      return;
+    }
+    downloadStorageObject(item.cover_storage_key)
+      .then((blob) => {
+        objectUrl = URL.createObjectURL(blob);
+        if (active) setSrc(objectUrl);
+      })
+      .catch(() => {
+        if (active) setSrc('');
+      });
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [item.cover_storage_key]);
+  return (
+    <div className="relative mx-auto flex aspect-[3/4] w-full max-w-44 items-center justify-center overflow-hidden rounded-xl bg-primary p-5 text-center shadow-soft">
+      {src ? <img src={src} alt={`Bìa sách ${item.title}`} className="absolute inset-0 h-full w-full object-cover" /> : (
+        <span className="line-clamp-5 font-serif text-lg leading-snug text-white">{item.title}</span>
+      )}
+      <span className="absolute bottom-3 left-3 text-[9px] uppercase tracking-[0.18em] text-white/60">BOOKFORFREEDOM</span>
+    </div>
+  );
+}
 
 export function LibraryExplorer() {
   const { toast } = useToast();
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState('');
+  const [tab, setTab] = useState<'all' | 'reading' | 'finished' | 'favorite' | 'saved'>('all');
+  const [sort, setSort] = useState<'recent' | 'title' | 'added'>('recent');
 
   async function refresh() {
     try {
@@ -28,6 +64,23 @@ export function LibraryExplorer() {
     void refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    const next = items.filter((item) => {
+      if (tab === 'favorite' && !item.isFavorite) return false;
+      if (tab === 'finished' && item.status !== 'finished' && !item.finished_at) return false;
+      if (tab === 'reading' && item.status !== 'reading') return false;
+      if (tab === 'saved' && item.isFavorite) return false;
+      if (needle && !`${item.title} ${item.subtitle ?? ''}`.toLowerCase().includes(needle)) return false;
+      return true;
+    });
+    return [...next].sort((a, b) => {
+      if (sort === 'title') return a.title.localeCompare(b.title, 'vi');
+      if (sort === 'added') return b.added_at.localeCompare(a.added_at);
+      return (b.last_opened_at ?? b.added_at).localeCompare(a.last_opened_at ?? a.added_at);
+    });
+  }, [items, query, sort, tab]);
 
   async function onFavorite(item: LibraryItem) {
     try {
@@ -60,29 +113,64 @@ export function LibraryExplorer() {
   }
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {items.map((item) => (
-        <div key={item.slug} className="rounded-2xl border border-border bg-card p-5">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <Link href={`/books/${item.slug}`} className="line-clamp-2 font-serif text-lg text-foreground hover:underline">
-                {item.title}
-              </Link>
-              <p className="mt-1 text-xs capitalize text-muted-foreground">{item.status.replaceAll('_', ' ')}</p>
-            </div>
-            <Button variant={item.isFavorite ? 'accent' : 'ghost'} size="sm" onClick={() => onFavorite(item)}>
-              {item.isFavorite ? '★' : '☆'}
-            </Button>
-          </div>
-          <div className="mt-4 flex gap-2">
-            <Link href={`/reader/${item.slug}`} className="inline-flex h-9 items-center rounded-full bg-primary px-4 text-sm text-primary-foreground">
-              Đọc
-            </Link>
-            <Button variant="outline" size="sm" onClick={() => onRemove(item)}>Xóa</Button>
-          </div>
+    <>
+      <div className="mb-5 grid gap-3 sm:grid-cols-[1fr_12rem_10rem]">
+        <div>
+          <Label htmlFor="library-search">Tìm trong thư viện</Label>
+          <Input id="library-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tên hoặc mô tả sách…" />
         </div>
-      ))}
-    </div>
+        <div>
+          <Label htmlFor="library-tab">Nhóm</Label>
+          <Select id="library-tab" value={tab} onChange={(event) => setTab(event.target.value as typeof tab)}>
+            <option value="all">Tất cả</option>
+            <option value="reading">Đang đọc</option>
+            <option value="finished">Đã hoàn thành</option>
+            <option value="favorite">Yêu thích</option>
+            <option value="saved">Đã lưu</option>
+          </Select>
+        </div>
+        <div>
+          <Label htmlFor="library-sort">Sắp xếp</Label>
+          <Select id="library-sort" value={sort} onChange={(event) => setSort(event.target.value as typeof sort)}>
+            <option value="recent">Gần đây</option>
+            <option value="added">Mới thêm</option>
+            <option value="title">Tên sách</option>
+          </Select>
+        </div>
+      </div>
+      {filtered.length === 0 ? (
+        <EmptyState icon={<LibraryIcon className="h-6 w-6" />} title="Không có sách phù hợp" description="Thử đổi bộ lọc hoặc từ khóa tìm kiếm." />
+      ) : (
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {filtered.map((item) => (
+            <article key={item.slug} className="rounded-2xl border border-border bg-card p-4 shadow-soft">
+              <LibraryBookCover item={item} />
+              <div className="mt-4">
+                <div className="flex items-start justify-between gap-2">
+                  <Link href={`/books/${item.slug}`} className="line-clamp-2 font-serif text-lg text-foreground hover:text-primary">
+                    {item.title}
+                  </Link>
+                  <Button variant={item.isFavorite ? 'accent' : 'ghost'} size="sm" onClick={() => onFavorite(item)} aria-label={item.isFavorite ? 'Bỏ yêu thích' : 'Thêm yêu thích'}>
+                    {item.isFavorite ? '★' : '☆'}
+                  </Button>
+                </div>
+                {item.subtitle ? <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{item.subtitle}</p> : null}
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {item.status.replaceAll('_', ' ')}
+                  {item.finished_at ? ' · Đã hoàn thành' : ''}
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Link href={`/reader/${item.slug}`} className="inline-flex h-9 items-center rounded-full bg-primary px-4 text-sm text-primary-foreground">
+                    {item.last_opened_at ? 'Tiếp tục đọc' : 'Đọc ngay'}
+                  </Link>
+                  <Button variant="outline" size="sm" onClick={() => onRemove(item)}>Bỏ khỏi thư viện</Button>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 

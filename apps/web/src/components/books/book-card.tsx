@@ -92,6 +92,14 @@ export function BookCard({ book, view = 'grid' }: { book: ApiBook; view?: 'grid'
         <h3 className="line-clamp-1 font-serif text-base text-foreground group-hover:text-primary">
           {book.title}
         </h3>
+        {book.author_name ? (
+          <p className="mt-1 truncate text-xs text-muted-foreground">Tác giả: {book.author_name}</p>
+        ) : null}
+        {book.publisher_name || book.publication_year ? (
+          <p className="mt-1 truncate text-xs text-muted-foreground">
+            {[book.publisher_name, book.publication_year ? String(book.publication_year) : ''].filter(Boolean).join(' · ')}
+          </p>
+        ) : null}
         <div className="mt-auto flex items-center justify-between pt-3 text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-1">
             <StarIcon className="h-3.5 w-3.5 text-accent" />

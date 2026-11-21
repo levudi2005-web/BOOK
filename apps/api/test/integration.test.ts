@@ -217,7 +217,9 @@ test('author studio: tạo sách → chương → publish → xuất hiện trê
   }, auth(userA.accessToken));
   assert.equal(chapter.status, 201);
 
-  const published = await jsonRequest(`${app.url}/studio/books/${userA.bookUuid}/publish`, 'POST', undefined, auth(userA.accessToken));
+  const published = await jsonRequest(`${app.url}/studio/books/${userA.bookUuid}/publish`, 'POST', {
+    scope: 'community', authorName: 'Tác giả kiểm thử', publicationYear: 2026,
+  }, auth(userA.accessToken));
   assert.equal(published.status, 201);
   assert.equal(published.body.status, 'published');
 
@@ -309,7 +311,7 @@ test('search (meilisearch): reindex qua gateway → tìm thấy sách đã publi
   const reindex = await jsonRequest(
     `${app.url}/gateway/internal/search/reindex`,
     'POST',
-    undefined,
+    { scope: 'community', authorName: 'Tác giả kiểm thử', publicationYear: 2026 },
     signedHeaders('POST', '/gateway/internal/search/reindex'),
   );
   assert.equal(reindex.status, 201);
@@ -395,7 +397,7 @@ test('author studio: categories, tags, version restore, unpublish và ownership'
   const published = await jsonRequest(
     `${app.url}/studio/books/${bookUuid}/publish`,
     'POST',
-    undefined,
+    { scope: 'community', authorName: 'Tác giả kiểm thử', publicationYear: 2026 },
     auth(userA.accessToken),
   );
   assert.equal(published.status, 201);
@@ -498,7 +500,9 @@ test('cover: public serve chỉ khi sách public + object public, ownership khi 
   assert.equal(attached.status, 201);
   assert.equal(attached.body.coverStorageKey, objectUuid);
 
-  const published = await jsonRequest(`${app.url}/studio/books/${bookUuid}/publish`, 'POST', undefined, auth(userA.accessToken));
+  const published = await jsonRequest(`${app.url}/studio/books/${bookUuid}/publish`, 'POST', {
+    scope: 'community', authorName: 'Tác giả kiểm thử', publicationYear: 2026,
+  }, auth(userA.accessToken));
   assert.equal(published.status, 201);
   const slug = String(published.body.slug);
 
@@ -520,6 +524,68 @@ test('cover: public serve chỉ khi sách public + object public, ownership khi 
   const removed = await jsonRequest(`${app.url}/studio/books/${bookUuid}/cover`, 'DELETE', undefined, auth(userA.accessToken));
   assert.equal(removed.status, 200);
   assert.equal(removed.body.coverStorageKey, null);
+});
+
+test('publishing scope: private không công khai, community công khai, unpublish gỡ catalog', async () => {
+  const created = await jsonRequest(
+    `${app.url}/studio/books`,
+    'POST',
+    { title: `E2E Publishing Scope ${suffix}` },
+    auth(userA.accessToken),
+  );
+  assert.equal(created.status, 201);
+  const bookUuid = String(created.body.bookUuid);
+  const slug = String(created.body.slug);
+  const chapter = await jsonRequest(
+    `${app.url}/studio/books/${bookUuid}/chapters`,
+    'POST',
+    { title: 'Chương công khai', content: 'Nội dung kiểm thử phạm vi xuất bản.' },
+    auth(userA.accessToken),
+  );
+  assert.equal(chapter.status, 201);
+
+  const missingAuthor = await jsonRequest(
+    `${app.url}/studio/books/${bookUuid}/publish`,
+    'POST',
+    { scope: 'community', authorName: '', publicationYear: 2026 },
+    auth(userA.accessToken),
+  );
+  assert.equal(missingAuthor.status, 400);
+
+  const privatePublish = await jsonRequest(
+    `${app.url}/studio/books/${bookUuid}/publish`,
+    'POST',
+    { scope: 'private', authorName: 'Tác giả riêng', publisherName: '', publicationYear: 2026 },
+    auth(userA.accessToken),
+  );
+  assert.equal(privatePublish.status, 201);
+  assert.equal(privatePublish.body.publicationScope, 'private');
+  assert.equal(privatePublish.body.visibility, 'private');
+  const privateCatalog = await fetch(`${app.url}/books/${slug}`);
+  assert.equal(privateCatalog.status, 404);
+
+  const communityPublish = await jsonRequest(
+    `${app.url}/studio/books/${bookUuid}/publish`,
+    'POST',
+    { scope: 'community', authorName: 'Tác giả cộng đồng', publisherName: 'NXB Kiểm thử', publicationYear: 2026 },
+    auth(userA.accessToken),
+  );
+  assert.equal(communityPublish.status, 201);
+  assert.equal(communityPublish.body.publicationScope, 'community');
+  assert.equal(communityPublish.body.visibility, 'public');
+  const communityCatalog = await fetch(`${app.url}/books/${slug}`);
+  assert.equal(communityCatalog.status, 200);
+
+  const unpublished = await jsonRequest(
+    `${app.url}/studio/books/${bookUuid}/unpublish`,
+    'POST',
+    undefined,
+    auth(userA.accessToken),
+  );
+  assert.equal(unpublished.status, 201);
+  assert.equal(unpublished.body.publicationScope, 'draft');
+  const afterUnpublish = await fetch(`${app.url}/books/${slug}`);
+  assert.equal(afterUnpublish.status, 404);
 });
 
 test('chapter images: chỉ phục vụ khi ảnh được tham chiếu trong chương của sách public', async () => {
@@ -554,7 +620,7 @@ test('chapter images: chỉ phục vụ khi ảnh được tham chiếu trong ch
   const published = await jsonRequest(
     `${app.url}/studio/books/${bookUuid}/publish`,
     'POST',
-    undefined,
+    { scope: 'community', authorName: 'Tác giả kiểm thử', publicationYear: 2026 },
     auth(userA.accessToken),
   );
   assert.equal(published.status, 201);
@@ -580,7 +646,9 @@ test('comments: sửa/xoá chỉ chủ sở hữu, danh sách phản ánh thay �
   const created = await jsonRequest(`${app.url}/studio/books`, 'POST', { title: `E2E Comment ${suffix}` }, auth(userA.accessToken));
   const bookUuid = String(created.body.bookUuid);
   await jsonRequest(`${app.url}/studio/books/${bookUuid}/chapters`, 'POST', { title: 'Chương 1', content: 'Nội dung' }, auth(userA.accessToken));
-  const published = await jsonRequest(`${app.url}/studio/books/${bookUuid}/publish`, 'POST', undefined, auth(userA.accessToken));
+  const published = await jsonRequest(`${app.url}/studio/books/${bookUuid}/publish`, 'POST', {
+    scope: 'community', authorName: 'Tác giả kiểm thử', publicationYear: 2026,
+  }, auth(userA.accessToken));
   const slug = String(published.body.slug);
 
   const added = await jsonRequest(`${app.url}/books/${slug}/comments`, 'POST', { body: 'Bình luận gốc' }, auth(userA.accessToken));

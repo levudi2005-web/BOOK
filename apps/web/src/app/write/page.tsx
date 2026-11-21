@@ -13,6 +13,7 @@ import { BookIcon, BookOpenIcon } from '@/components/icons';
 import {
   createBook,
   deleteStudioBook,
+  downloadStorageObject,
   isAuthError,
   listMyBooks,
   publishBook,
@@ -27,6 +28,37 @@ const LANGUAGES = [
 
 const emptyForm = { title: '', subtitle: '', description: '', language: 'vi' };
 
+function MyBookCover({ book }: { book: StudioBook }) {
+  const [src, setSrc] = useState('');
+  useEffect(() => {
+    let active = true;
+    let objectUrl = '';
+    if (!book.coverStorageKey) {
+      setSrc('');
+      return;
+    }
+    downloadStorageObject(book.coverStorageKey)
+      .then((blob) => {
+        objectUrl = URL.createObjectURL(blob);
+        if (active) setSrc(objectUrl);
+      })
+      .catch(() => {
+        if (active) setSrc('');
+      });
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [book.coverStorageKey]);
+  return (
+    <div className="relative mx-auto flex aspect-[3/4] w-full max-w-44 items-center justify-center overflow-hidden rounded-xl bg-primary p-5 text-center">
+      {src ? <img src={src} alt={`Bìa sách ${book.title}`} className="absolute inset-0 h-full w-full object-cover" /> : (
+        <span className="line-clamp-5 font-serif text-lg leading-snug text-white">{book.title}</span>
+      )}
+    </div>
+  );
+}
+
 export default function WritePage() {
   const { toast } = useToast();
   const [books, setBooks] = useState<StudioBook[]>([]);
@@ -37,6 +69,13 @@ export default function WritePage() {
   const [creating, setCreating] = useState(false);
   const [busyUuid, setBusyUuid] = useState('');
   const [confirmDeleteUuid, setConfirmDeleteUuid] = useState('');
+  const [publishBookUuid, setPublishBookUuid] = useState('');
+  const [publishForm, setPublishForm] = useState({
+    scope: 'private' as 'private' | 'community',
+    authorName: '',
+    publisherName: '',
+    publicationYear: String(new Date().getFullYear()),
+  });
 
   const refresh = useCallback(async () => {
     try {
@@ -85,11 +124,38 @@ export default function WritePage() {
   }
 
   async function onPublish(book: StudioBook) {
-    setBusyUuid(book.bookUuid);
+    setPublishBookUuid(book.bookUuid);
+    setPublishForm({
+      scope: book.publicationScope === 'community' ? 'community' : 'private',
+      authorName: book.authorName ?? '',
+      publisherName: book.publisherName ?? '',
+      publicationYear: String(book.publicationYear ?? new Date().getFullYear()),
+    });
+  }
+
+  async function submitPublish(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!publishBookUuid) return;
+    const year = Number(publishForm.publicationYear);
+    if (!publishForm.authorName.trim()) {
+      toast('Tên tác giả là bắt buộc.', 'error');
+      return;
+    }
+    if (!Number.isInteger(year) || year < 1000 || year > 2200) {
+      toast('Năm xuất bản không hợp lệ.', 'error');
+      return;
+    }
+    setBusyUuid(publishBookUuid);
     try {
-      await publishBook(book.bookUuid);
+      await publishBook(publishBookUuid, {
+        scope: publishForm.scope,
+        authorName: publishForm.authorName,
+        publisherName: publishForm.publisherName,
+        publicationYear: year,
+      });
       await refresh();
-      toast('Sách đã được xuất bản công khai.', 'success');
+      setPublishBookUuid('');
+      toast(publishForm.scope === 'community' ? 'Sách đã được xuất bản lên Community.' : 'Sách đã được xuất bản riêng tư.', 'success');
     } catch (publishError) {
       toast(publishError instanceof Error ? publishError.message : 'Không thể xuất bản sách.', 'error');
     } finally {
@@ -257,6 +323,7 @@ export default function WritePage() {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {books.map((book) => (
               <Card key={book.bookUuid} className="flex h-full flex-col p-5">
+                <MyBookCover book={book} />
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge variant={book.status === 'published' ? 'default' : 'muted'}>
                     {statusLabel(book.status)}
@@ -303,6 +370,56 @@ export default function WritePage() {
           </div>
         )}
       </div>
+      {publishBookUuid ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="presentation" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setPublishBookUuid('');
+        }}>
+          <form
+            onSubmit={submitPublish}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="publish-title"
+            className="w-full max-w-lg rounded-2xl border border-border bg-card p-6 shadow-lift"
+          >
+            <h2 id="publish-title" className="font-serif text-2xl text-foreground">Thông tin xuất bản</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Chọn phạm vi xuất bản rõ ràng trước khi công khai.</p>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <label className={`cursor-pointer rounded-xl border p-4 ${publishForm.scope === 'private' ? 'border-primary bg-primary/5' : 'border-border'}`}>
+                <input type="radio" name="publish-scope" checked={publishForm.scope === 'private'} onChange={() => setPublishForm((current) => ({ ...current, scope: 'private' }))} />
+                <span className="ml-2 font-semibold text-foreground">Cá nhân tôi</span>
+                <span className="mt-2 block text-xs text-muted-foreground">Chỉ trong tài khoản và thư viện cá nhân. Không vào Community.</span>
+              </label>
+              <label className={`cursor-pointer rounded-xl border p-4 ${publishForm.scope === 'community' ? 'border-primary bg-primary/5' : 'border-border'}`}>
+                <input type="radio" name="publish-scope" checked={publishForm.scope === 'community'} onChange={() => setPublishForm((current) => ({ ...current, scope: 'community' }))} />
+                <span className="ml-2 font-semibold text-foreground">Community</span>
+                <span className="mt-2 block text-xs text-muted-foreground">Công khai trong catalog và Community.</span>
+              </label>
+            </div>
+            <div className="mt-5 space-y-4">
+              <div>
+                <Label htmlFor="publish-author">Tên tác giả *</Label>
+                <Input id="publish-author" required value={publishForm.authorName} maxLength={255} onChange={(event) => setPublishForm((current) => ({ ...current, authorName: event.target.value }))} />
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <Label htmlFor="publish-year">Năm xuất bản *</Label>
+                  <Input id="publish-year" required type="number" min="1000" max="2200" value={publishForm.publicationYear} onChange={(event) => setPublishForm((current) => ({ ...current, publicationYear: event.target.value }))} />
+                </div>
+                <div>
+                  <Label htmlFor="publish-publisher">Nhà xuất bản</Label>
+                  <Input id="publish-publisher" value={publishForm.publisherName} maxLength={255} placeholder="Không bắt buộc" onChange={(event) => setPublishForm((current) => ({ ...current, publisherName: event.target.value }))} />
+                </div>
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setPublishBookUuid('')}>Hủy</Button>
+              <Button type="submit" disabled={busyUuid === publishBookUuid}>
+                {busyUuid === publishBookUuid ? 'Đang xuất bản…' : 'Xác nhận xuất bản'}
+              </Button>
+            </div>
+          </form>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { primaryNav } from '@/lib/site';
-import { getAccessToken, logout, subscribeToAccessTokenChanges } from '@/lib/api';
+import { getAccessToken, getMyProfile, logout, subscribeToAccessTokenChanges, type MyProfile } from '@/lib/api';
 import { Logo } from '@/components/logo';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { CloseIcon, MenuIcon, SearchIcon, UserIcon } from '@/components/icons';
@@ -15,6 +15,8 @@ export function SiteHeader() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [account, setAccount] = useState<MyProfile | null>(null);
 
   useEffect(() => {
     setOpen(false);
@@ -22,6 +24,23 @@ export function SiteHeader() {
   }, [pathname]);
 
   useEffect(() => subscribeToAccessTokenChanges(() => setSignedIn(Boolean(getAccessToken()))), []);
+
+  useEffect(() => {
+    if (!signedIn) {
+      setAccount(null);
+      setAccountOpen(false);
+      return;
+    }
+    let active = true;
+    getMyProfile()
+      .then((profile) => {
+        if (active) setAccount(profile);
+      })
+      .catch(() => {
+        if (active) setAccount(null);
+      });
+    return () => { active = false; };
+  }, [signedIn]);
 
   async function onLogout() {
     try {
@@ -89,14 +108,42 @@ export function SiteHeader() {
           </Link>
           <ThemeToggle />
           {signedIn ? (
-            <button
-              type="button"
-              onClick={() => void onLogout()}
-              className="focus-ring hidden h-10 items-center gap-2 rounded-full px-4 text-sm font-medium text-foreground transition-colors hover:bg-surface sm:inline-flex"
-            >
-              <UserIcon className="h-4 w-4" />
-              Đăng xuất
-            </button>
+            <div className="relative hidden sm:block">
+              <button
+                type="button"
+                onClick={() => setAccountOpen((value) => !value)}
+                aria-expanded={accountOpen}
+                className="focus-ring flex h-10 items-center gap-2 rounded-full px-3 text-sm font-medium text-foreground transition-colors hover:bg-surface"
+              >
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 font-serif text-sm text-primary">
+                  {(account?.profile.displayName || account?.username || 'T').slice(0, 1).toUpperCase()}
+                </span>
+                Tài khoản
+              </button>
+              {accountOpen ? (
+                <div className="absolute right-0 mt-2 w-72 rounded-2xl border border-border bg-card p-3 shadow-lift">
+                  <div className="flex items-center gap-3 border-b border-border px-2 pb-3">
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/10 font-serif text-lg text-primary">
+                      {(account?.profile.displayName || account?.username || 'T').slice(0, 1).toUpperCase()}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-foreground">{account?.profile.displayName || account?.username || 'Tài khoản'}</p>
+                      <p className="truncate text-xs text-muted-foreground">@{account?.username ?? ''}</p>
+                    </div>
+                  </div>
+                  <Link href="/profile" onClick={() => setAccountOpen(false)} className="mt-2 block rounded-xl px-3 py-2 text-sm text-foreground hover:bg-surface">
+                    Trung tâm tài khoản
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => void onLogout()}
+                    className="mt-1 block w-full rounded-xl px-3 py-2 text-left text-sm text-danger hover:bg-danger/10"
+                  >
+                    Đăng xuất
+                  </button>
+                </div>
+              ) : null}
+            </div>
           ) : (
             <Link
               href="/auth/login"
@@ -136,13 +183,13 @@ export function SiteHeader() {
               </Link>
             ))}
             {signedIn ? (
-              <button
-                type="button"
-                onClick={() => void onLogout()}
+              <Link
+                href="/profile"
+                onClick={() => setOpen(false)}
                 className="mt-2 block w-full rounded-xl bg-primary px-4 py-3 text-center text-base font-medium text-primary-foreground"
               >
-                Đăng xuất
-              </button>
+                Tài khoản
+              </Link>
             ) : (
               <Link
                 href="/auth/login"

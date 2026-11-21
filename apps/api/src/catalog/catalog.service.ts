@@ -67,7 +67,8 @@ export class CatalogService {
       `SELECT b.book_uuid, b.slug, b.title, b.subtitle, b.description, b.language,
               b.publication_date, b.page_count, b.word_count, b.cover_storage_key,
               b.average_rating, b.rating_count, b.review_count, b.view_count,
-              b.download_count, b.published_at
+              b.download_count, b.published_at,
+              b.author_name, b.publisher_name, b.publication_year
        FROM books b
        WHERE ${where.join(' AND ')}
        ORDER BY ${orderBy}
@@ -87,7 +88,8 @@ export class CatalogService {
               b.isbn_13, b.isbn_10, b.language, b.publication_date, b.edition,
               b.page_count, b.word_count, b.cover_storage_key, b.cover_mime_type,
               b.average_rating, b.rating_count, b.review_count, b.view_count,
-              b.download_count, b.published_at, b.book_id
+              b.download_count, b.published_at, b.book_id,
+              b.author_name, b.publisher_name, b.publication_year
        FROM books b
        WHERE b.slug = ? AND ${publicStatusFilter}
        LIMIT 1`,

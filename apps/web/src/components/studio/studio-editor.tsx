@@ -110,6 +110,13 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
   const [chapterSavedAt, setChapterSavedAt] = useState<Date | null>(null);
   const [newChapterTitle, setNewChapterTitle] = useState('');
   const [busyAction, setBusyAction] = useState('');
+  const [publishOpen, setPublishOpen] = useState(false);
+  const [publishForm, setPublishForm] = useState({
+    scope: 'private' as 'private' | 'community',
+    authorName: '',
+    publisherName: '',
+    publicationYear: String(new Date().getFullYear()),
+  });
   const [confirmBookDelete, setConfirmBookDelete] = useState(false);
   const [versions, setVersions] = useState<StudioVersion[] | null>(null);
   const [versionsLoading, setVersionsLoading] = useState(false);
@@ -516,11 +523,38 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
       toast(error, 'error');
       return;
     }
+    setPublishForm({
+      scope: book.publicationScope === 'community' ? 'community' : 'private',
+      authorName: book.authorName ?? '',
+      publisherName: book.publisherName ?? '',
+      publicationYear: String(book.publicationYear ?? new Date().getFullYear()),
+    });
+    setPublishOpen(true);
+  }
+
+  async function submitPublish(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!book) return;
+    const year = Number(publishForm.publicationYear);
+    if (!publishForm.authorName.trim()) {
+      toast('Tên tác giả là bắt buộc.', 'error');
+      return;
+    }
+    if (!Number.isInteger(year) || year < 1000 || year > 2200) {
+      toast('Năm xuất bản không hợp lệ.', 'error');
+      return;
+    }
     setBusyAction('publish');
     try {
-      const published = await publishBook(book.bookUuid);
+      const published = await publishBook(book.bookUuid, {
+        scope: publishForm.scope,
+        authorName: publishForm.authorName,
+        publisherName: publishForm.publisherName,
+        publicationYear: year,
+      });
       applyBook(published);
-      toast('Sách đã được xuất bản công khai.', 'success');
+      setPublishOpen(false);
+      toast(publishForm.scope === 'community' ? 'Sách đã được xuất bản lên Community.' : 'Sách đã được xuất bản riêng tư.', 'success');
     } catch (error) {
       toast(error instanceof Error ? error.message : 'Không thể xuất bản sách.', 'error');
     } finally {
@@ -1132,6 +1166,46 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
           </Card>
         </aside>
       </div>
+      {publishOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="presentation" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setPublishOpen(false);
+        }}>
+          <form onSubmit={submitPublish} role="dialog" aria-modal="true" aria-labelledby="studio-publish-title" className="w-full max-w-lg rounded-2xl border border-border bg-card p-6 shadow-lift">
+            <h2 id="studio-publish-title" className="font-serif text-2xl text-foreground">Thông tin xuất bản</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Chọn riêng tư cá nhân hoặc Community công khai.</p>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <label className={`cursor-pointer rounded-xl border p-4 ${publishForm.scope === 'private' ? 'border-primary bg-primary/5' : 'border-border'}`}>
+                <input type="radio" checked={publishForm.scope === 'private'} onChange={() => setPublishForm((current) => ({ ...current, scope: 'private' }))} />
+                <span className="ml-2 font-semibold">Cá nhân tôi</span>
+              </label>
+              <label className={`cursor-pointer rounded-xl border p-4 ${publishForm.scope === 'community' ? 'border-primary bg-primary/5' : 'border-border'}`}>
+                <input type="radio" checked={publishForm.scope === 'community'} onChange={() => setPublishForm((current) => ({ ...current, scope: 'community' }))} />
+                <span className="ml-2 font-semibold">Community</span>
+              </label>
+            </div>
+            <div className="mt-5 space-y-4">
+              <div>
+                <Label htmlFor="studio-publish-author">Tên tác giả *</Label>
+                <Input id="studio-publish-author" required value={publishForm.authorName} onChange={(event) => setPublishForm((current) => ({ ...current, authorName: event.target.value }))} />
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <Label htmlFor="studio-publish-year">Năm xuất bản *</Label>
+                  <Input id="studio-publish-year" required type="number" min="1000" max="2200" value={publishForm.publicationYear} onChange={(event) => setPublishForm((current) => ({ ...current, publicationYear: event.target.value }))} />
+                </div>
+                <div>
+                  <Label htmlFor="studio-publish-publisher">Nhà xuất bản</Label>
+                  <Input id="studio-publish-publisher" value={publishForm.publisherName} placeholder="Không bắt buộc" onChange={(event) => setPublishForm((current) => ({ ...current, publisherName: event.target.value }))} />
+                </div>
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setPublishOpen(false)}>Hủy</Button>
+              <Button type="submit" disabled={busyAction === 'publish'}>{busyAction === 'publish' ? 'Đang xuất bản…' : 'Xác nhận xuất bản'}</Button>
+            </div>
+          </form>
+        </div>
+      ) : null}
     </div>
   );
 }

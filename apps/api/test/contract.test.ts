@@ -149,7 +149,9 @@ test('history: ghi nhận chương đang đọc và trả dữ liệu deep-link 
   );
   assert.equal(chapterTwo.status, 201);
 
-  const published = await jsonRequest(`${app.url}/studio/books/${bookUuid}/publish`, 'POST', undefined, auth(userA.token));
+  const published = await jsonRequest(`${app.url}/studio/books/${bookUuid}/publish`, 'POST', {
+    scope: 'community', authorName: 'Tác giả kiểm thử', publicationYear: 2026,
+  }, auth(userA.token));
   assert.equal(published.status, 201);
   const slug = String(published.body.slug);
 
@@ -231,7 +233,9 @@ test('cover: sách chưa publish không phục vụ ảnh bìa qua endpoint côn
   );
   const bookUuid = String(book.body.bookUuid);
   const bookSlug = String(book.body.slug);
-  const published = await jsonRequest(`${app.url}/studio/books/${bookUuid}/publish`, 'POST', undefined, auth(userA.token));
+  const published = await jsonRequest(`${app.url}/studio/books/${bookUuid}/publish`, 'POST', {
+    scope: 'community', authorName: 'Tác giả kiểm thử', publicationYear: 2026,
+  }, auth(userA.token));
   // Chưa có chương → publish bị từ chối, sách vẫn draft/private.
   assert.equal(published.status, 400);
 

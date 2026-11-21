@@ -25,6 +25,10 @@ type BookRow = {
   book_uuid: string;
   title: string;
   subtitle: string | null;
+  author_name: string | null;
+  publisher_name: string | null;
+  publication_year: number | null;
+  publication_scope: string | null;
   slug: string;
   description: string | null;
   language: string;
@@ -121,7 +125,8 @@ export class StudioService {
   async listBooks(userId: number) {
     const rows = await this.db.query<BookRow[]>(
       `SELECT book_id, book_uuid, title, subtitle, slug, description, language,
-              status, visibility, published_at, created_by_user_id
+              status, visibility, published_at, created_by_user_id,
+              author_name, publisher_name, publication_year, publication_scope
        FROM books
        WHERE created_by_user_id = ? AND deleted_at IS NULL
        ORDER BY updated_at DESC`,
@@ -134,7 +139,8 @@ export class StudioService {
     const rows = await this.db.query<BookRow[]>(
       `SELECT book_id, book_uuid, title, subtitle, slug, description, language,
               status, visibility, published_at, created_by_user_id,
-              cover_storage_key, cover_mime_type
+              cover_storage_key, cover_mime_type,
+              author_name, publisher_name, publication_year, publication_scope
        FROM books
        WHERE book_uuid = ? AND deleted_at IS NULL
        LIMIT 1`,
@@ -198,7 +204,15 @@ export class StudioService {
   async updateBook(
     userId: number,
     bookUuid: string,
-    input: { title?: string; subtitle?: string; description?: string; language?: string },
+    input: {
+      title?: string;
+      subtitle?: string;
+      description?: string;
+      language?: string;
+      authorName?: string;
+      publisherName?: string;
+      publicationYear?: number;
+    },
   ) {
     const book = await this.requireOwnedBook(userId, bookUuid);
     const title = input.title !== undefined ? input.title.trim() : book.title;
@@ -209,7 +223,8 @@ export class StudioService {
 
     await this.db.query(
       `UPDATE books
-       SET title = ?, subtitle = ?, description = ?, language = ?, slug = ?
+       SET title = ?, subtitle = ?, description = ?, language = ?, slug = ?,
+           author_name = ?, publisher_name = ?, publication_year = ?
        WHERE book_id = ?`,
       [
         title,
@@ -217,6 +232,9 @@ export class StudioService {
         input.description !== undefined ? input.description : book.description,
         input.language !== undefined ? input.language : book.language,
         slug,
+        input.authorName !== undefined ? input.authorName.trim() : book.author_name,
+        input.publisherName !== undefined ? input.publisherName.trim() || null : book.publisher_name,
+        input.publicationYear !== undefined ? input.publicationYear : book.publication_year,
         book.book_id,
       ],
     );
@@ -394,8 +412,21 @@ export class StudioService {
     return this.getBook(userId, bookUuid);
   }
 
-  async publishBook(userId: number, bookUuid: string) {
+  async publishBook(
+    userId: number,
+    bookUuid: string,
+    input: { scope?: string; authorName?: string; publisherName?: string; publicationYear?: number },
+  ) {
     const book = await this.requireOwnedBook(userId, bookUuid);
+    const scope = input.scope === 'community' ? 'community' : input.scope === 'private' ? 'private' : '';
+    if (!scope) throw new BadRequestException('Phải chọn phạm vi xuất bản cá nhân hoặc Community.');
+    const authorName = (input.authorName ?? '').trim();
+    const publicationYear = Number(input.publicationYear);
+    if (!authorName) throw new BadRequestException('Tên tác giả là bắt buộc.');
+    if (!Number.isInteger(publicationYear) || publicationYear < 1000 || publicationYear > 2200) {
+      throw new BadRequestException('Năm xuất bản không hợp lệ.');
+    }
+    const publisherName = (input.publisherName ?? '').trim() || null;
     const chapters = await this.db.query<{ chapter_id: number; title: string; word_count: number }[]>(
       `SELECT chapter_id, title, word_count FROM book_chapters WHERE book_id = ? ORDER BY sort_order, chapter_number`,
       [book.book_id],
@@ -413,9 +444,21 @@ export class StudioService {
       await connection.beginTransaction();
       await connection.execute(
         `UPDATE books
-         SET status = 'published', visibility = 'public', published_at = NOW(3), word_count = ?
+         SET status = 'published',
+             visibility = ?, publication_scope = ?, author_name = ?, publisher_name = ?,
+             publication_year = ?, publication_date = ?,
+             published_at = NOW(3), word_count = ?
          WHERE book_id = ?`,
-        [totalWords, book.book_id],
+        [
+          scope === 'community' ? 'public' : 'private',
+          scope,
+          authorName,
+          publisherName,
+          publicationYear,
+          `${publicationYear}-01-01`,
+          totalWords,
+          book.book_id,
+        ],
       );
       // Catalog exposes chapters of published books, so the chapter status must
       // follow the book status instead of staying 'draft' forever.
@@ -541,7 +584,9 @@ export class StudioService {
     try {
       await connection.beginTransaction();
       await connection.execute(
-        `UPDATE books SET status = 'draft', visibility = 'private', published_at = NULL WHERE book_id = ?`,
+        `UPDATE books SET status = 'draft', visibility = 'private',
+                         publication_scope = 'draft', published_at = NULL
+         WHERE book_id = ?`,
         [book.book_id],
       );
       await connection.execute(`UPDATE book_chapters SET status = 'draft' WHERE book_id = ?`, [book.book_id]);
@@ -689,7 +734,8 @@ export class StudioService {
   private async requireOwnedBook(userId: number, bookUuid: string): Promise<BookRow> {
     const rows = await this.db.query<BookRow[]>(
       `SELECT book_id, book_uuid, title, subtitle, slug, description, language,
-              status, visibility, published_at, created_by_user_id, word_count
+              status, visibility, published_at, created_by_user_id, word_count,
+              author_name, publisher_name, publication_year, publication_scope
        FROM books WHERE book_uuid = ? AND deleted_at IS NULL LIMIT 1`,
       [bookUuid],
     );
@@ -734,6 +780,10 @@ export class StudioService {
       language: book.language,
       status: book.status,
       visibility: book.visibility,
+      publicationScope: book.publication_scope ?? 'draft',
+      authorName: book.author_name,
+      publisherName: book.publisher_name,
+      publicationYear: book.publication_year,
       publishedAt: book.published_at,
     };
   }
