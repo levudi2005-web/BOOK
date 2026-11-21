@@ -74,7 +74,8 @@ async function seedAuthor(request: APIRequestContext) {
 }
 
 async function signIn(page: Page, token: string): Promise<void> {
-  await page.addInitScript(
+  await page.goto('/');
+  await page.evaluate(
     ([key, value]) => window.localStorage.setItem(key as string, value as string),
     [TOKEN_KEY, token] as const,
   );
@@ -125,7 +126,8 @@ test('auth: hồ sơ thật khi có token, đăng xuất xoá phiên', async ({ 
   await page.goto('/profile');
   await expect(page.getByRole('heading', { level: 1 })).toContainText(username);
 
-  await page.getByText('Đăng xuất').first().click();
+  await uiLogout(page);
+  await page.goto('/profile');
   await expect(page.getByText('Đăng nhập để xem hồ sơ')).toBeVisible();
   expect(await page.evaluate((key) => window.localStorage.getItem(key), TOKEN_KEY)).toBeNull();
 });
@@ -172,11 +174,11 @@ test('comments: thêm, sửa, xoá bình luận của chính mình', async ({ pa
   await page.goto(`/books/${slug}`);
 
   await page.getByPlaceholder('Viết bình luận…').fill('Bình luận E2E');
-  await page.getByRole('button', { name: 'Gửi' }).click();
+  await page.getByRole('button', { name: 'Gửi', exact: true }).click();
   await expect(page.getByText('Bình luận E2E')).toBeVisible();
 
   await page.getByRole('button', { name: 'Sửa' }).first().click();
-  await page.locator('textarea').last().fill('Bình luận đã sửa');
+  await page.getByPlaceholder('Sửa bình luận…').fill('Bình luận đã sửa');
   await page.getByRole('button', { name: 'Lưu' }).click();
   await expect(page.getByText('Bình luận đã sửa')).toBeVisible();
 
@@ -200,7 +202,7 @@ test('history: trang lịch sử đọc hiển thị trạng thái rỗng hoặc
   const { token } = await seedAuthor(request);
   await signIn(page, token);
   await page.goto('/history');
-  await expect(page.getByRole('heading', { name: 'Lịch sử đọc' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Lịch sử đọc', exact: true })).toBeVisible();
 });
 
 test('responsive: không tràn ngang trên thiết bị nhỏ', async ({ page }) => {
@@ -249,7 +251,10 @@ test('studio UI: tạo sách, sửa thông tin, chương, autosave, reorder, pub
   await page.getByRole('button', { name: 'Lưu thông tin' }).click();
   await expect(page.getByText('Đã lưu thông tin sách.')).toBeVisible({ timeout: 20_000 });
 
-  await page.getByText('1. Chương 1').click();
+  await page.getByPlaceholder('Chương 1').fill('Chương 1');
+  await page.getByRole('button', { name: 'Thêm chương' }).click();
+  await expect(page.getByText('1. Chương 1')).toBeVisible({ timeout: 20_000 });
+
   await expect(page.locator('#chapter-content')).toBeVisible();
   await page.locator('#chapter-content').fill('Nội dung chương một đã sửa bằng E2E');
   await expect(page.getByText(/Đã lưu lúc/).first()).toBeVisible({ timeout: 25_000 });
@@ -270,6 +275,7 @@ test('studio UI: tạo sách, sửa thông tin, chương, autosave, reorder, pub
   const publishedRow = (publishedBooks.body.data as { slug: string; title: string }[]).find((book) => book.title === `${title} (sửa)`);
   expect(publishedRow?.slug).toBeTruthy();
 
+  page.once('dialog', (dialog) => void dialog.accept());
   await page.getByRole('button', { name: 'Gỡ xuất bản' }).click();
   await expect(page.getByText('Bản nháp').first()).toBeVisible({ timeout: 25_000 });
 });
@@ -301,7 +307,7 @@ test('reader + library + history: đọc sách, lưu thư viện và deep-link �
   await expect(page).toHaveURL(/chapter=/);
 
   await page.goto('/history');
-  await expect(page.getByRole('heading', { name: 'Lịch sử đọc' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Lịch sử đọc', exact: true })).toBeVisible();
   await expect(page.getByText(title).first()).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText(/Chương 2/).first()).toBeVisible();
   const deepLink = page.getByRole('link', { name: 'Đọc tiếp' }).first();
@@ -322,7 +328,7 @@ test('admin UI: đăng nhập quản trị, xem dashboard và danh sách ngườ
   await expect(page.getByText('Tổng người dùng')).toBeVisible();
 
   await page.goto('/admin/users');
-  await expect(page.getByRole('heading', { name: /Người dùng/ })).toBeVisible({ timeout: 25_000 });
+  await expect(page.getByRole('heading', { name: 'Danh sách người dùng' })).toBeVisible({ timeout: 25_000 });
 });
 
 test('comments UI: người khác không thấy nút sửa/xoá bình luận của chủ sở hữu', async ({ page, request }) => {

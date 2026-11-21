@@ -128,6 +128,7 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
     try {
       const detail = await getStudioBook(bookUuid);
       applyBook(detail);
+      setSelectedUuid((current) => current || detail.chapters[0]?.chapterUuid || '');
       setLoadError('');
       setAuthRequired(false);
       return detail;
@@ -195,23 +196,27 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
     if (metaDirty && metaState !== 'saving') setMetaState('dirty');
   }, [metaDirty, metaState]);
 
+  // Populate the editor fields whenever a different chapter is selected.
+  // Keyed on the chapter uuid so an autosave that updates `book` does not clobber
+  // the user's in-progress text (same uuid ⇒ skip).
+  const editingChapterUuid = useRef('');
+  useEffect(() => {
+    const uuid = selectedChapter?.chapterUuid ?? '';
+    if (editingChapterUuid.current === uuid) return;
+    editingChapterUuid.current = uuid;
+    setChapterTitle(selectedChapter?.title ?? '');
+    setChapterContent(selectedChapter?.content ?? '');
+    setChapterState('idle');
+    setChapterSavedAt(null);
+  }, [selectedChapter]);
+
   useEffect(() => {
     if (chapterDirty) {
-      setChapterState('dirty');
+      setChapterState((current) => (current === 'saving' ? current : 'dirty'));
       return;
     }
-    if (!selectedChapter) {
-      setChapterTitle('');
-      setChapterContent('');
-      setChapterState('idle');
-      return;
-    }
-    const savedTitle = selectedChapter.title;
-    const savedContent = selectedChapter.content ?? '';
-    setChapterTitle((current) => (current === savedTitle ? current : savedTitle));
-    setChapterContent((current) => (current === savedContent ? current : savedContent));
     setChapterState((current) => (current === 'saving' || current === 'saved' ? current : 'idle'));
-  }, [chapterDirty, selectedChapter]);
+  }, [chapterDirty]);
 
   useEffect(() => {
     if (!dirty) return undefined;

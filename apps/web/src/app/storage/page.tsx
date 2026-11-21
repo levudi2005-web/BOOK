@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { useToast } from '@/components/toast';
 import {
+  cancelUpload,
   completeUpload,
   deleteObject,
   downloadStorageObject,
@@ -47,6 +48,9 @@ export default function StoragePage() {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [downloadingUuid, setDownloadingUuid] = useState('');
+  const cancelRequested = useRef(false);
+  const activeSession = useRef('');
+  const [canceling, setCanceling] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -66,24 +70,46 @@ export default function StoragePage() {
   async function onUpload(file: File) {
     setUploading(true);
     setProgress(0);
+    cancelRequested.current = false;
     try {
       const init = await initUpload(file.name, file.type || 'application/octet-stream', file.size);
+      activeSession.current = init.sessionUuid;
       for (let index = 0; index < init.chunkCount; index += 1) {
+        if (cancelRequested.current) break;
         const blob = file.slice(index * CHUNK_SIZE, Math.min(file.size, (index + 1) * CHUNK_SIZE));
         const arrayBuffer = await blob.arrayBuffer();
         await uploadChunk(init.sessionUuid, index, bytesToBase64(arrayBuffer));
         setProgress(Math.round(((index + 1) / init.chunkCount) * 100));
       }
-      await completeUpload(init.sessionUuid);
-      toast('Đã tải lên thành công.', 'default');
+      if (cancelRequested.current) {
+        try { await cancelUpload(init.sessionUuid); } catch { /* best effort */ }
+        toast('Đã hủy tải lên.', 'default');
+      } else {
+        await completeUpload(init.sessionUuid);
+        toast('Đã tải lên thành công.', 'default');
+      }
       await refresh();
     } catch (error) {
-      toast(error instanceof Error ? error.message : 'Tải lên thất bại.', 'default');
+      if (!cancelRequested.current) {
+        toast(error instanceof Error ? error.message : 'Tải lên thất bại.', 'default');
+      }
     } finally {
       setUploading(false);
       setProgress(0);
+      cancelRequested.current = false;
+      activeSession.current = '';
       if (fileInput.current) fileInput.current.value = '';
     }
+  }
+
+  async function onCancelUpload() {
+    cancelRequested.current = true;
+    setCanceling(true);
+    const session = activeSession.current;
+    if (session) {
+      try { await cancelUpload(session); } catch { /* best effort */ }
+    }
+    setCanceling(false);
   }
 
   async function onDelete(uuid: string) {
@@ -153,9 +179,16 @@ export default function StoragePage() {
             if (file) void onUpload(file);
           }}
         />
-        <Button onClick={() => fileInput.current?.click()} disabled={uploading}>
-          {uploading ? `Đang tải ${progress}%…` : 'Tải file lên'}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button onClick={() => fileInput.current?.click()} disabled={uploading}>
+            {uploading ? `Đang tải ${progress}%…` : 'Tải file lên'}
+          </Button>
+          {uploading ? (
+            <Button variant="danger" onClick={() => void onCancelUpload()} disabled={canceling}>
+              {canceling ? 'Đang hủy…' : 'Hủy'}
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       {quota ? (

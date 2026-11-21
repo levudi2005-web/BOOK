@@ -93,6 +93,13 @@ export type ApiAuthor = {
   bio: string | null;
 };
 
+export type ApiPublisher = {
+  publisher_id: number;
+  name: string;
+  slug: string;
+  description: string | null;
+};
+
 export type BookListResponse = {
   data: ApiBook[];
   meta: { page: number; limit: number; total: number; totalPages: number };
@@ -159,6 +166,10 @@ export async function fetchCategories(): Promise<{ data: ApiCategory[] }> {
 
 export async function fetchAuthors(): Promise<{ data: ApiAuthor[] }> {
   return get<{ data: ApiAuthor[] }>('/authors');
+}
+
+export async function fetchPublishers(): Promise<{ data: ApiPublisher[] }> {
+  return get<{ data: ApiPublisher[] }>('/publishers');
 }
 
 // ---------------------------------------------------------------------------
@@ -263,6 +274,10 @@ export async function uploadChunk(sessionUuid: string, chunkIndex: number, data:
 
 export async function completeUpload(sessionUuid: string): Promise<StorageObject> {
   return request(`/storage/objects/${sessionUuid}/complete`, { method: 'POST' });
+}
+
+export async function cancelUpload(sessionUuid: string): Promise<{ status: string }> {
+  return request(`/storage/objects/${sessionUuid}/cancel`, { method: 'POST' });
 }
 
 export async function listObjects(): Promise<{ data: StorageObject[] }> {
@@ -484,6 +499,10 @@ export async function updateDocument(documentUuid: string, input: { title?: stri
 
 export async function getDocument(documentUuid: string): Promise<OfficeDocument & { content: unknown }> {
   return request(`/documents/${documentUuid}`);
+}
+
+export async function deleteDocument(documentUuid: string): Promise<{ status: string }> {
+  return request(`/documents/${documentUuid}`, { method: 'DELETE' });
 }
 
 // ---------------------------------------------------------------------------

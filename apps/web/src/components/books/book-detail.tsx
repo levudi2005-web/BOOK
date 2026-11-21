@@ -318,6 +318,7 @@ export function BookDetail() {
                         <Textarea
                           value={editingBody}
                           maxLength={5000}
+                          placeholder="Sửa bình luận…"
                           className="min-h-16 bg-card"
                           onChange={(event) => setEditingBody(event.target.value)}
                         />

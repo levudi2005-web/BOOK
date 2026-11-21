@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { fetchBooks, fetchCategories, type ApiBook, type ApiCategory, type BookQuery } from '@/lib/api';
+import { fetchBooks, fetchCategories, fetchPublishers, type ApiBook, type ApiCategory, type ApiPublisher, type BookQuery } from '@/lib/api';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Select, Input, Label } from '@/components/ui/field';
 import { Button } from '@/components/ui/button';
@@ -12,7 +12,9 @@ import { BookIcon, FilterIcon } from '@/components/icons';
 export function DiscoverExplorer() {
   const searchParams = useSearchParams();
   const [categories, setCategories] = useState<ApiCategory[]>([]);
+  const [publishers, setPublishers] = useState<ApiPublisher[]>([]);
   const [category, setCategory] = useState(searchParams.get('category') ?? '');
+  const [publisher, setPublisher] = useState(searchParams.get('publisher') ?? '');
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<'newest' | 'popular' | 'rating' | 'title'>('newest');
   const [view, setView] = useState<'grid' | 'list'>('grid');
@@ -26,6 +28,7 @@ export function DiscoverExplorer() {
   useEffect(() => {
     let active = true;
     fetchCategories().then((response) => { if (active) setCategories(response.data); }).catch(() => {});
+    fetchPublishers().then((response) => { if (active) setPublishers(response.data); }).catch(() => {});
     return () => { active = false; };
   }, []);
 
@@ -35,6 +38,7 @@ export function DiscoverExplorer() {
     const timer = window.setTimeout(() => {
       const nextQuery: BookQuery = { sort, page, limit: 12 };
       if (category) nextQuery.category = category;
+      if (publisher) nextQuery.publisher = publisher;
       if (query.trim()) nextQuery.q = query.trim();
       fetchBooks(nextQuery)
         .then((response) => {
@@ -47,7 +51,7 @@ export function DiscoverExplorer() {
         .finally(() => { if (active) setLoading(false); });
     }, 300);
     return () => { active = false; window.clearTimeout(timer); };
-  }, [category, query, sort, page]);
+  }, [category, publisher, query, sort, page]);
 
 
   if (loading) {
@@ -80,7 +84,10 @@ export function DiscoverExplorer() {
             </div>
             <div>
               <Label htmlFor="discover-publisher">Nhà xuất bản</Label>
-              <Select id="discover-publisher" disabled><option value="">Tất cả nhà xuất bản (cần backend)</option></Select>
+              <Select id="discover-publisher" value={publisher} onChange={(e) => { setPublisher(e.target.value); setPage(1); }}>
+                <option value="">Tất cả nhà xuất bản</option>
+                {publishers.map((item) => <option key={item.slug} value={item.slug}>{item.name}</option>)}
+              </Select>
             </div>
             <div>
               <Label htmlFor="discover-year">Năm xuất bản</Label>
@@ -117,6 +124,11 @@ export function DiscoverExplorer() {
             <Select id="discover-category-mobile" value={category} onChange={(e) => { setCategory(e.target.value); setPage(1); }}>
               <option value="">Tất cả danh mục</option>
               {categories.map((item) => <option key={item.slug} value={item.slug}>{item.name}</option>)}
+            </Select>
+            <Label htmlFor="discover-publisher-mobile">Nhà xuất bản</Label>
+            <Select id="discover-publisher-mobile" value={publisher} onChange={(e) => { setPublisher(e.target.value); setPage(1); }}>
+              <option value="">Tất cả nhà xuất bản</option>
+              {publishers.map((item) => <option key={item.slug} value={item.slug}>{item.name}</option>)}
             </Select>
           </div>
         ) : null}

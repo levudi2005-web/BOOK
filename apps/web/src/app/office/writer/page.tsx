@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/field';
 import { useToast } from '@/components/toast';
 import {
   createDocument,
+  deleteDocument,
   getDocument,
   listDocuments,
   updateDocument,
@@ -62,6 +63,23 @@ export default function WriterPage() {
     }
   }
 
+  async function deleteCurrentDocument(uuid: string) {
+    if (!window.confirm('Xóa tài liệu này? Thao tác không thể hoàn tác.')) return;
+    try {
+      await deleteDocument(uuid);
+      setDocuments((current) => current.filter((doc) => doc.documentUuid !== uuid));
+      if (currentUuid === uuid) {
+        setCurrentUuid('');
+        setTitle('');
+        titleRef.current = '';
+        if (editorRef.current) editorRef.current.innerHTML = '';
+      }
+      toast('Đã xóa tài liệu.', 'default');
+    } catch {
+      toast('Không thể xóa tài liệu.', 'default');
+    }
+  }
+
   function scheduleSave() {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => void save(), 800);
@@ -98,15 +116,23 @@ export default function WriterPage() {
               <li className="text-sm text-muted-foreground">Chưa có tài liệu.</li>
             ) : null}
             {documents.map((doc) => (
-              <li key={doc.documentUuid}>
+              <li key={doc.documentUuid} className="flex items-center gap-1">
                 <button
                   type="button"
                   onClick={() => openDocument(doc.documentUuid)}
-                  className={`w-full rounded-lg px-3 py-2 text-left text-sm transition hover:bg-surface ${
+                  className={`min-w-0 flex-1 rounded-lg px-3 py-2 text-left text-sm transition hover:bg-surface ${
                     doc.documentUuid === currentUuid ? 'bg-surface font-medium text-primary' : 'text-foreground'
                   }`}
                 >
                   {doc.title}
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Xóa tài liệu ${doc.title}`}
+                  onClick={() => void deleteCurrentDocument(doc.documentUuid)}
+                  className="focus-ring rounded-lg px-2 py-2 text-xs text-danger transition hover:bg-surface"
+                >
+                  Xóa
                 </button>
               </li>
             ))}
