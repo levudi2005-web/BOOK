@@ -6,38 +6,23 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { LibraryIcon } from '@/components/icons';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/toast';
-import { downloadStorageObject, listLibrary, removeFromLibrary, updateLibrary, type LibraryItem } from '@/lib/api';
+import { listLibrary, removeFromLibrary, updateLibrary, type LibraryItem } from '@/lib/api';
+import { BookCover } from '@/components/books/book-cover';
 import { Input, Label, Select } from '@/components/ui/field';
 
 function LibraryBookCover({ item }: { item: LibraryItem }) {
-  const [src, setSrc] = useState('');
-  useEffect(() => {
-    let active = true;
-    let objectUrl = '';
-    if (!item.cover_storage_key) {
-      setSrc('');
-      return;
-    }
-    downloadStorageObject(item.cover_storage_key)
-      .then((blob) => {
-        objectUrl = URL.createObjectURL(blob);
-        if (active) setSrc(objectUrl);
-      })
-      .catch(() => {
-        if (active) setSrc('');
-      });
-    return () => {
-      active = false;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [item.cover_storage_key]);
+  const isPublicBook = (item.book_visibility ?? 'public') === 'public';
   return (
-    <div className="relative mx-auto flex aspect-[3/4] w-full max-w-44 items-center justify-center overflow-hidden rounded-xl bg-primary p-5 text-center shadow-soft">
-      {src ? <img src={src} alt={`Bìa sách ${item.title}`} className="absolute inset-0 h-full w-full object-cover" /> : (
-        <span className="line-clamp-5 font-serif text-lg leading-snug text-white">{item.title}</span>
-      )}
-      <span className="absolute bottom-3 left-3 text-[9px] uppercase tracking-[0.18em] text-white/60">BOOKFORFREEDOM</span>
-    </div>
+    <BookCover
+      title={item.title}
+      subtitle={item.subtitle}
+      slug={item.slug}
+      coverKey={item.cover_storage_key}
+      ownerBookUuid={item.book_uuid}
+      isPublic={isPublicBook}
+      placeholderLabel="Chưa có bìa"
+      className="mx-auto w-full max-w-44 rounded-xl shadow-soft"
+    />
   );
 }
 

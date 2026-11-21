@@ -1,17 +1,8 @@
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
-import { publicCoverUrl, type ApiBook } from '@/lib/api';
+import type { ApiBook } from '@/lib/api';
+import { BookCover } from '@/components/books/book-cover';
 import { StarIcon } from '@/components/icons';
-
-const coverPalette = ['#173F35', '#315C4C', '#6B4F2A', '#4A3B52', '#7A4A3A', '#3A4A5C', '#2F5C54', '#5C523A'];
-
-function coverTone(slug: string): string {
-  let hash = 0;
-  for (let index = 0; index < slug.length; index += 1) {
-    hash = (hash * 31 + slug.charCodeAt(index)) >>> 0;
-  }
-  return coverPalette[hash % coverPalette.length];
-}
 
 export function BookCard({ book, view = 'grid' }: { book: ApiBook; view?: 'grid' | 'list' }) {
   const rating = Number(book.average_rating ?? 0);
@@ -22,20 +13,17 @@ export function BookCard({ book, view = 'grid' }: { book: ApiBook; view?: 'grid'
         href={`/books/${book.slug}`}
         className="focus-ring group flex gap-4 rounded-2xl border border-border bg-card p-4 shadow-soft transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lift"
       >
-        <div
-          className="relative flex h-24 w-16 shrink-0 items-center justify-center overflow-hidden rounded-md px-2 text-center"
-          style={{ backgroundColor: coverTone(book.slug) }}
-        >
-          {book.cover_storage_key ? (
-            <img
-              src={publicCoverUrl(book.slug)}
-              alt={`Bìa sách ${book.title}`}
-              loading="lazy"
-              className="absolute inset-0 h-full w-full object-cover"
-            />
-          ) : (
-            <span className="line-clamp-3 font-serif text-xs leading-tight text-white/90">{book.title}</span>
-          )}
+        <div className="w-16 shrink-0">
+          <BookCover
+            title={book.title}
+            subtitle={book.subtitle}
+            authorName={book.author_name}
+            slug={book.slug}
+            coverKey={book.cover_storage_key}
+            isPublic
+            showSpine={false}
+            placeholderLabel="Chưa có bìa"
+          />
         </div>
         <div className="min-w-0 flex-1">
           <h3 className="truncate font-serif text-lg text-foreground group-hover:text-primary">
@@ -62,31 +50,16 @@ export function BookCard({ book, view = 'grid' }: { book: ApiBook; view?: 'grid'
       href={`/books/${book.slug}`}
       className="focus-ring group flex flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-soft transition-all duration-300 hover:-translate-y-1 hover:shadow-lift"
     >
-      <div
-        className="relative flex aspect-[3/4] items-center justify-center overflow-hidden p-6 text-center"
-        style={{ backgroundColor: coverTone(book.slug) }}
-      >
-        <div
-          className="absolute inset-0 opacity-20"
-          style={{ background: 'radial-gradient(80% 60% at 20% 0%, rgba(255,255,255,0.5), transparent 60%)' }}
+      <div className="p-3 pb-0">
+        <BookCover
+          title={book.title}
+          subtitle={book.subtitle}
+          authorName={book.author_name}
+          slug={book.slug}
+          coverKey={book.cover_storage_key}
+          isPublic
+          placeholderLabel="Chưa có bìa"
         />
-        <div className="relative">
-          <p className="font-serif text-xl leading-snug text-white/95 line-clamp-4">{book.title}</p>
-          {book.subtitle ? (
-            <p className="mt-2 text-xs text-white/70 line-clamp-2">{book.subtitle}</p>
-          ) : null}
-        </div>
-        {book.cover_storage_key ? (
-          <img
-            src={publicCoverUrl(book.slug)}
-            alt={`Bìa sách ${book.title}`}
-            loading="lazy"
-            className="absolute inset-0 h-full w-full object-cover"
-          />
-        ) : null}
-        <span className="absolute bottom-3 left-4 text-[10px] uppercase tracking-[0.2em] text-white/60">
-          BOOKFORFREEDOM
-        </span>
       </div>
       <div className="flex flex-1 flex-col p-4">
         <h3 className="line-clamp-1 font-serif text-base text-foreground group-hover:text-primary">

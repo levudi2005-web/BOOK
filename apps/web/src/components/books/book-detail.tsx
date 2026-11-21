@@ -14,12 +14,12 @@ import {
   getMyProfile,
   listComments,
   listReviews,
-  publicCoverUrl,
   updateComment,
   type BookDetail as BookDetailData,
   type Chapter,
 } from '@/lib/api';
 import { PageHeader } from '@/components/page-header';
+import { BookCover } from '@/components/books/book-cover';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -218,20 +218,17 @@ export function BookDetail() {
       <div className="container-site py-8">
         <div className="grid gap-8 lg:grid-cols-[16rem_1fr]">
           <div className="mx-auto w-full max-w-[16rem]">
-            <div className="relative flex aspect-[3/4] items-center justify-center overflow-hidden rounded-2xl bg-primary p-8 text-center shadow-lift">
-              {book.cover_storage_key ? (
-                <img
-                  src={publicCoverUrl(book.slug)}
-                  alt={`Bìa sách ${book.title}`}
-                  className="absolute inset-0 h-full w-full object-cover"
-                />
-              ) : (
-                <div>
-                  <p className="font-serif text-xl leading-snug text-white line-clamp-4">{book.title}</p>
-                  {book.subtitle ? <p className="mt-2 text-xs text-white/70 line-clamp-2">{book.subtitle}</p> : null}
-                </div>
-              )}
-            </div>
+            <BookCover
+              title={book.title}
+              subtitle={book.subtitle}
+              authorName={book.author_name}
+              slug={book.slug}
+              coverKey={book.cover_storage_key}
+              isPublic
+              priority
+              placeholderLabel="Chưa có ảnh bìa"
+              className="rounded-2xl shadow-lift"
+            />
           </div>
 
           <div>

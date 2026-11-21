@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/toast';
 import { cn } from '@/lib/utils';
 import { ArrowLeftIcon, BookIcon, ChevronDownIcon, ClockIcon, CloseIcon } from '@/components/icons';
+import { BookCover } from '@/components/books/book-cover';
 import { PdfExport } from '@/components/studio/pdf-export';
 import { RichTextEditor } from '@/components/studio/rich-text-editor';
 import {
@@ -19,7 +20,6 @@ import {
   createChapter,
   deleteChapter,
   deleteStudioBook,
-  downloadStorageObject,
   getMyProfile,
   getStudioBook,
   initUpload,
@@ -272,30 +272,6 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
   }, [chapterContent, chapterDirty, chapterState, chapterTitle, selectedChapter]);
 
   const [coverBusy, setCoverBusy] = useState(false);
-  const [coverPreview, setCoverPreview] = useState('');
-
-  const coverKey = book?.coverStorageKey ?? '';
-
-  useEffect(() => {
-    if (!coverKey) {
-      setCoverPreview('');
-      return undefined;
-    }
-    let active = true;
-    let objectUrl = '';
-    downloadStorageObject(coverKey)
-      .then((blob) => {
-        objectUrl = URL.createObjectURL(blob);
-        if (active) setCoverPreview(objectUrl);
-      })
-      .catch(() => {
-        if (active) setCoverPreview('');
-      });
-    return () => {
-      active = false;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [coverKey]);
 
   async function onUploadCover(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -864,11 +840,21 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
               <span className="text-xs text-muted-foreground">JPEG/PNG/WebP/GIF · tối đa 2 MiB</span>
             </div>
             <div className="mt-4 flex flex-wrap items-center gap-4">
-              <div className="h-32 w-24 overflow-hidden rounded-xl border border-border bg-surface">
-                {coverPreview ? (
-                  <img src={coverPreview} alt="Ảnh bìa hiện tại" className="h-full w-full object-cover" />
+              <div className="w-24 shrink-0 overflow-hidden rounded-xl border border-border">
+                {book ? (
+                  <BookCover
+                    title={book.title}
+                    authorName={book.authorName}
+                    slug={book.slug}
+                    coverKey={book.coverStorageKey}
+                    ownerBookUuid={book.bookUuid}
+                    isPublic={book.visibility === 'public' && book.status === 'published'}
+                    showSpine={false}
+                    alt="Ảnh bìa hiện tại"
+                    className="h-32 w-24 rounded-none shadow-none"
+                  />
                 ) : (
-                  <div className="flex h-full items-center justify-center text-xs text-muted-foreground">Chưa có</div>
+                  <div className="flex h-32 items-center justify-center text-xs text-muted-foreground">Chưa có</div>
                 )}
               </div>
               <div className="flex flex-wrap gap-2">

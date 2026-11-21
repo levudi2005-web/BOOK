@@ -608,9 +608,20 @@ export async function adminMe(): Promise<{ username: string; email: string; role
 // Cover ảnh bìa (StorageService): upload qua /storage/objects rồi gắn vào sách.
 // ---------------------------------------------------------------------------
 
-/** Ảnh bìa công khai — backend chỉ trả khi sách published + public. */
-export function publicCoverUrl(slug: string): string {
-  return apiUrl(`/books/${encodeURIComponent(slug)}/cover`);
+/**
+ * Ảnh bìa công khai — backend chỉ trả khi sách published + public.
+ * `version` là `cover_storage_key`: khi tác giả thay bìa, URL đổi nên trình
+ * duyệt/CDN không bao giờ hiển thị lại ảnh cũ.
+ */
+export function publicCoverUrl(slug: string, version?: string | null): string {
+  const url = apiUrl(`/books/${encodeURIComponent(slug)}/cover`);
+  return version ? `${url}?v=${encodeURIComponent(version)}` : url;
+}
+
+/** Ảnh bìa riêng của tác giả (draft/private) — yêu cầu Bearer token. */
+export function ownerCoverUrl(bookUuid: string, version?: string | null): string {
+  const url = apiUrl(`/studio/books/${encodeURIComponent(bookUuid)}/cover`);
+  return version ? `${url}?v=${encodeURIComponent(version)}` : url;
 }
 
 export async function setBookCover(bookUuid: string, objectUuid: string): Promise<StudioBookDetail> {
@@ -770,6 +781,9 @@ export type LibraryItem = {
   title: string;
   subtitle: string | null;
   cover_storage_key: string | null;
+  cover_mime_type?: string | null;
+  book_visibility?: string | null;
+  book_status?: string | null;
   status: string;
   isFavorite: boolean;
   added_at: string;

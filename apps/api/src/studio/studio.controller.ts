@@ -6,8 +6,11 @@ import {
   Param,
   Post,
   Put,
+  Res,
+  StreamableFile,
   UseGuards,
 } from '@nestjs/common';
+import { Readable } from 'node:stream';
 import { CurrentUserId } from '../common/current-user.decorator.js';
 import { SessionAuthGuard } from '../common/session-auth.guard.js';
 import { StudioService } from './studio.service.js';
@@ -93,6 +96,21 @@ export class StudioController {
     @Body() body: { objectUuid?: string },
   ) {
     return this.studio.setCover(userId, bookUuid, body.objectUuid ?? '');
+  }
+
+  @Get('books/:bookUuid/cover')
+  async getCover(
+    @CurrentUserId() userId: number,
+    @Param('bookUuid') bookUuid: string,
+    @Res({ passthrough: true })
+    res: { setHeader(name: string, value: string): void },
+  ) {
+    const { dto, stream } = await this.studio.getOwnedCover(userId, bookUuid);
+    res.setHeader('Content-Type', dto.mimeType);
+    res.setHeader('Content-Length', String(dto.sizeBytes));
+    res.setHeader('Cache-Control', 'private, max-age=60, must-revalidate');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    return new StreamableFile(Readable.from(stream));
   }
 
   @Delete('books/:bookUuid/cover')

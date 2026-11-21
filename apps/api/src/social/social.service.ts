@@ -24,7 +24,8 @@ export class SocialService {
 
   async listLibrary(userId: number) {
     const rows = await this.db.query<Record<string, unknown>[]>(
-      `SELECT b.book_uuid, b.slug, b.title, b.subtitle, b.cover_storage_key,
+      `SELECT b.book_uuid, b.slug, b.title, b.subtitle, b.cover_storage_key, b.cover_mime_type,
+              b.visibility AS book_visibility, b.status AS book_status,
               ul.status, ul.is_favorite, ul.added_at, ul.last_opened_at, ul.finished_at
        FROM user_library ul
        JOIN books b ON b.book_id = ul.book_id

@@ -13,12 +13,12 @@ import { BookIcon, BookOpenIcon } from '@/components/icons';
 import {
   createBook,
   deleteStudioBook,
-  downloadStorageObject,
   isAuthError,
   listMyBooks,
   publishBook,
   type StudioBook,
 } from '@/lib/api';
+import { BookCover } from '@/components/books/book-cover';
 import { statusLabel, validateMetadata, visibilityLabel } from '@/lib/studio-validation';
 
 const LANGUAGES = [
@@ -29,33 +29,20 @@ const LANGUAGES = [
 const emptyForm = { title: '', subtitle: '', description: '', language: 'vi' };
 
 function MyBookCover({ book }: { book: StudioBook }) {
-  const [src, setSrc] = useState('');
-  useEffect(() => {
-    let active = true;
-    let objectUrl = '';
-    if (!book.coverStorageKey) {
-      setSrc('');
-      return;
-    }
-    downloadStorageObject(book.coverStorageKey)
-      .then((blob) => {
-        objectUrl = URL.createObjectURL(blob);
-        if (active) setSrc(objectUrl);
-      })
-      .catch(() => {
-        if (active) setSrc('');
-      });
-    return () => {
-      active = false;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [book.coverStorageKey]);
+  // Chỉ sách đã xuất bản Community mới có bìa công khai; draft sách riêng tư
+  // được stream qua route chủ sở hữu `/studio/books/:uuid/cover`.
+  const isPublicBook = book.visibility === 'public' && book.status === 'published';
   return (
-    <div className="relative mx-auto flex aspect-[3/4] w-full max-w-44 items-center justify-center overflow-hidden rounded-xl bg-primary p-5 text-center">
-      {src ? <img src={src} alt={`Bìa sách ${book.title}`} className="absolute inset-0 h-full w-full object-cover" /> : (
-        <span className="line-clamp-5 font-serif text-lg leading-snug text-white">{book.title}</span>
-      )}
-    </div>
+    <BookCover
+      title={book.title}
+      subtitle={book.subtitle}
+      authorName={book.authorName}
+      slug={book.slug}
+      coverKey={book.coverStorageKey}
+      ownerBookUuid={book.bookUuid}
+      isPublic={isPublicBook}
+      className="mx-auto w-full max-w-44 rounded-xl"
+    />
   );
 }
 

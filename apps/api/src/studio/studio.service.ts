@@ -126,6 +126,7 @@ export class StudioService {
     const rows = await this.db.query<BookRow[]>(
       `SELECT book_id, book_uuid, title, subtitle, slug, description, language,
               status, visibility, published_at, created_by_user_id,
+              cover_storage_key, cover_mime_type,
               author_name, publisher_name, publication_year, publication_scope
        FROM books
        WHERE created_by_user_id = ? AND deleted_at IS NULL
@@ -181,8 +182,6 @@ export class StudioService {
 
     return {
       ...this.toBookDto(book),
-      coverStorageKey: book.cover_storage_key,
-      coverMimeType: book.cover_mime_type,
       chapters: chapters.map((c) => ({
         chapterUuid: c.chapter_uuid,
         chapterNumber: c.chapter_number,
@@ -410,6 +409,22 @@ export class StudioService {
     }
 
     return this.getBook(userId, bookUuid);
+  }
+
+  /**
+   * Streams the cover of a book **owned by `userId`**, whatever the publication
+   * state is. The public catalog route (`/books/:slug/cover`) intentionally
+   * refuses drafts and private books, which is why authors previously could not
+   * see the cover they had just uploaded on `/write` or `/account`.
+   */
+  async getOwnedCover(userId: number, bookUuid: string) {
+    const book = await this.requireOwnedBook(userId, bookUuid);
+    if (!book.cover_storage_key) {
+      throw new NotFoundException('Sách chưa có ảnh bìa.');
+    }
+    // `downloadStream` resolves the object through the owner-scoped lookup, so a
+    // storage key belonging to another user can never be streamed here.
+    return this.storage.downloadStream(userId, book.cover_storage_key);
   }
 
   async publishBook(
@@ -735,6 +750,7 @@ export class StudioService {
     const rows = await this.db.query<BookRow[]>(
       `SELECT book_id, book_uuid, title, subtitle, slug, description, language,
               status, visibility, published_at, created_by_user_id, word_count,
+              cover_storage_key, cover_mime_type,
               author_name, publisher_name, publication_year, publication_scope
        FROM books WHERE book_uuid = ? AND deleted_at IS NULL LIMIT 1`,
       [bookUuid],
@@ -784,6 +800,11 @@ export class StudioService {
       authorName: book.author_name,
       publisherName: book.publisher_name,
       publicationYear: book.publication_year,
+      // `coverStorageKey` must be part of every Studio payload: `/write` and
+      // `/account` render the author's own cover from it. Omitting it made
+      // both pages fall back to a plain coloured block.
+      coverStorageKey: book.cover_storage_key ?? null,
+      coverMimeType: book.cover_mime_type ?? null,
       publishedAt: book.published_at,
     };
   }

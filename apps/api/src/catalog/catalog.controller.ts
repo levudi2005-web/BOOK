@@ -19,7 +19,11 @@ export class CatalogController {
     const { dto, stream } = await this.catalog.getPublicCover(slug);
     res.setHeader('Content-Type', dto.mimeType);
     res.setHeader('Content-Length', String(dto.sizeBytes));
-    res.setHeader('Cache-Control', 'public, max-age=300');
+    // Clients append `?v=<cover_storage_key>` (see `publicCoverUrl`), so a new
+    // cover always arrives under a new URL. Keeping the response cacheable is
+    // therefore safe while a replaced cover can never be served from cache.
+    res.setHeader('ETag', `"cover-${dto.objectUuid}"`);
+    res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=600');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     return new StreamableFile(Readable.from(stream));
   }
