@@ -3,10 +3,24 @@
   "name": "bookforfreedom-web",
   "main": ".open-next/worker.js",
   "compatibility_date": "2026-11-20",
+  // Bundle Next server (3.3 MB handler.mjs) imports node:crypto, node:path,
+  // node:stream, node:zlib, node:async_hooks, node:buffer, node:module, node:http.
+  // Without nodejs_compat those dynamic routes fail to resolve modules at runtime.
+  // `global_fetch_strictly_public` is required by @opennextjs/cloudflare templates
+  // so server-side fetch never loops back into the same Worker.
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
   },
+  // Self-reference binding required by OpenNext (caching / ISR revalidation).
+  // The service name must match the worker name above.
+  "services": [
+    {
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "bookforfreedom-web"
+    }
+  ],
   "vars": {
     "NEXT_PUBLIC_API_URL": "https://freedombook.duckdns.org/api",
     "NEXT_PUBLIC_APP_URL": "https://freedombook.duckdns.org"

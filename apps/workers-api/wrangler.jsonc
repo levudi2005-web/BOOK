@@ -5,6 +5,9 @@
   "compatibility_date": "2025-01-01",
   "workers_dev": false,
   "vars": {
-    "VPS_GATEWAY_URL": "https://freedombook.duckdns.org/api/gateway"
+    // Base URL của VPS API (nginx đã strip `/api` trước khi tới NestJS).
+    // Router ký + forward path dạng `/gateway/...`, nên base phải dừng ở `/api`,
+    // KHÔNG kèm `/gateway` (nếu kèm sẽ thành /api/gateway/gateway/... -> 404/401).
+    "VPS_GATEWAY_URL": "https://freedombook.duckdns.org/api"
   }
 }
