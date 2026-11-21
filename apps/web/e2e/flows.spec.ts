@@ -198,6 +198,66 @@ test('catalog + search: sách đã publish xuất hiện, trang search phản h�
   await expect(page.getByRole('heading').first()).toBeVisible();
 });
 
+test('catalog filters: category, author và publisher gửi bộ lọc trên desktop và mobile', async ({ page }, testInfo) => {
+  const bookQueries: string[] = [];
+  await page.route('**/categories', (route) =>
+    route.fulfill({
+      json: {
+        data: [{ category_id: 1, parent_category_id: null, name: 'Danh mục kiểm thử', slug: 'test-category', description: null, sort_order: 1, is_active: 1 }],
+      },
+    }),
+  );
+  await page.route('**/authors', (route) =>
+    route.fulfill({
+      json: {
+        data: [{ author_id: 1, author_uuid: 'test-author-uuid', name: 'Tác giả kiểm thử', slug: 'test-author', bio: null }],
+      },
+    }),
+  );
+  await page.route('**/publishers', (route) =>
+    route.fulfill({
+      json: {
+        data: [{ publisher_id: 1, name: 'Nhà xuất bản kiểm thử', slug: 'test-publisher', description: null }],
+      },
+    }),
+  );
+  await page.route('**/books?*', (route) =>
+    route.fulfill({ json: { data: [], meta: { page: 1, limit: 12, total: 0, totalPages: 0 } } }),
+  );
+  page.on('request', (request) => {
+    if (request.url().includes('/books?')) bookQueries.push(request.url());
+  });
+
+  await page.goto('/discover');
+  if (testInfo.project.name === 'mobile') {
+    await page.getByRole('button', { name: 'Bộ lọc' }).click();
+  }
+  const suffix = testInfo.project.name === 'mobile' ? '-mobile' : '';
+  const categoryFilter = page.locator(`#discover-category${suffix}`);
+  const authorFilter = page.locator(
+    `#discover-author${suffix}`,
+  );
+  const publisherFilter = page.locator(`#discover-publisher${suffix}`);
+  await expect(categoryFilter.locator('option[value="test-category"]')).toHaveCount(1);
+  await expect(authorFilter.locator('option[value="test-author"]')).toHaveCount(1);
+  await expect(publisherFilter.locator('option[value="test-publisher"]')).toHaveCount(1);
+  await categoryFilter.selectOption('test-category');
+  await authorFilter.selectOption('test-author');
+  await publisherFilter.selectOption('test-publisher');
+  await expect
+    .poll(() =>
+      bookQueries.some((url) => {
+        const query = new URL(url).searchParams;
+        return (
+          query.get('category') === 'test-category' &&
+          query.get('author') === 'test-author' &&
+          query.get('publisher') === 'test-publisher'
+        );
+      }),
+    )
+    .toBe(true);
+});
+
 test('history: trang lịch sử đọc hiển thị trạng thái rỗng hoặc dữ liệu', async ({ page, request }) => {
   const { token } = await seedAuthor(request);
   await signIn(page, token);

@@ -36,6 +36,8 @@ export default defineConfig({
       reuseExistingServer: true,
       timeout: 180_000,
       env: {
+        NODE_ENV: 'test',
+        TEST_AUTH_RATE_LIMIT_MAX_REQUESTS: '200',
         TEST_ENV_FILE: 'apps/api/test/.env.test',
         E2E_API_PORT: String(API_PORT),
         E2E_WEB_PORT: String(WEB_PORT),

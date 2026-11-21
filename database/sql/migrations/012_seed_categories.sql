@@ -10,6 +10,7 @@
 -- =====================================================================
 
 SET NAMES utf8mb4;
+USE `bookuser`;
 
 INSERT INTO `categories` (`name`, `slug`, `description`, `sort_order`, `is_active`)
 VALUES

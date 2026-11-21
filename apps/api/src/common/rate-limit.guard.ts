@@ -1,7 +1,12 @@
 import { CanActivate, ExecutionContext, HttpException, HttpStatus, Injectable } from '@nestjs/common';
 
 const WINDOW_MS = 60_000;
-const MAX_REQUESTS = 20;
+const DEFAULT_MAX_REQUESTS = 20;
+const configuredTestLimit = Number(process.env.TEST_AUTH_RATE_LIMIT_MAX_REQUESTS);
+const MAX_REQUESTS =
+  process.env.NODE_ENV === 'test' && Number.isSafeInteger(configuredTestLimit) && configuredTestLimit > 0
+    ? configuredTestLimit
+    : DEFAULT_MAX_REQUESTS;
 
 type Bucket = { count: number; resetAt: number };
 type RequestLike = { ip?: string; headers: Record<string, unknown> };

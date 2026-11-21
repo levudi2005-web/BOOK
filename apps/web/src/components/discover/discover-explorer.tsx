@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { fetchBooks, fetchCategories, fetchPublishers, type ApiBook, type ApiCategory, type ApiPublisher, type BookQuery } from '@/lib/api';
+import { fetchAuthors, fetchBooks, fetchCategories, fetchPublishers, type ApiAuthor, type ApiBook, type ApiCategory, type ApiPublisher, type BookQuery } from '@/lib/api';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Select, Input, Label } from '@/components/ui/field';
 import { Button } from '@/components/ui/button';
@@ -12,8 +12,10 @@ import { BookIcon, FilterIcon } from '@/components/icons';
 export function DiscoverExplorer() {
   const searchParams = useSearchParams();
   const [categories, setCategories] = useState<ApiCategory[]>([]);
+  const [authors, setAuthors] = useState<ApiAuthor[]>([]);
   const [publishers, setPublishers] = useState<ApiPublisher[]>([]);
   const [category, setCategory] = useState(searchParams.get('category') ?? '');
+  const [author, setAuthor] = useState(searchParams.get('author') ?? '');
   const [publisher, setPublisher] = useState(searchParams.get('publisher') ?? '');
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<'newest' | 'popular' | 'rating' | 'title'>('newest');
@@ -28,6 +30,7 @@ export function DiscoverExplorer() {
   useEffect(() => {
     let active = true;
     fetchCategories().then((response) => { if (active) setCategories(response.data); }).catch(() => {});
+    fetchAuthors().then((response) => { if (active) setAuthors(response.data); }).catch(() => {});
     fetchPublishers().then((response) => { if (active) setPublishers(response.data); }).catch(() => {});
     return () => { active = false; };
   }, []);
@@ -38,6 +41,7 @@ export function DiscoverExplorer() {
     const timer = window.setTimeout(() => {
       const nextQuery: BookQuery = { sort, page, limit: 12 };
       if (category) nextQuery.category = category;
+      if (author) nextQuery.author = author;
       if (publisher) nextQuery.publisher = publisher;
       if (query.trim()) nextQuery.q = query.trim();
       fetchBooks(nextQuery)
@@ -51,7 +55,7 @@ export function DiscoverExplorer() {
         .finally(() => { if (active) setLoading(false); });
     }, 300);
     return () => { active = false; window.clearTimeout(timer); };
-  }, [category, publisher, query, sort, page]);
+  }, [category, author, publisher, query, sort, page]);
 
 
   if (loading) {
@@ -80,7 +84,10 @@ export function DiscoverExplorer() {
             </div>
             <div>
               <Label htmlFor="discover-author">Tác giả</Label>
-              <Select id="discover-author" disabled><option value="">Tất cả tác giả (cần backend)</option></Select>
+              <Select id="discover-author" value={author} onChange={(e) => { setAuthor(e.target.value); setPage(1); }}>
+                <option value="">Tất cả tác giả</option>
+                {authors.map((item) => <option key={item.slug} value={item.slug}>{item.name}</option>)}
+              </Select>
             </div>
             <div>
               <Label htmlFor="discover-publisher">Nhà xuất bản</Label>
@@ -124,6 +131,11 @@ export function DiscoverExplorer() {
             <Select id="discover-category-mobile" value={category} onChange={(e) => { setCategory(e.target.value); setPage(1); }}>
               <option value="">Tất cả danh mục</option>
               {categories.map((item) => <option key={item.slug} value={item.slug}>{item.name}</option>)}
+            </Select>
+            <Label htmlFor="discover-author-mobile">Tác giả</Label>
+            <Select id="discover-author-mobile" value={author} onChange={(e) => { setAuthor(e.target.value); setPage(1); }}>
+              <option value="">Tất cả tác giả</option>
+              {authors.map((item) => <option key={item.slug} value={item.slug}>{item.name}</option>)}
             </Select>
             <Label htmlFor="discover-publisher-mobile">Nhà xuất bản</Label>
             <Select id="discover-publisher-mobile" value={publisher} onChange={(e) => { setPublisher(e.target.value); setPage(1); }}>
