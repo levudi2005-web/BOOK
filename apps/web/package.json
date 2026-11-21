@@ -8,6 +8,7 @@
     "build:cloudflare": "opennextjs-cloudflare build",
     "preview": "wrangler dev",
     "deploy": "wrangler deploy",
+    "deploy:staging": "wrangler deploy --config wrangler.staging.jsonc",
     "typecheck": "tsc --noEmit",
     "test": "tsc -p tsconfig.test.json && node --test dist-test/test/*.test.js"
   },
