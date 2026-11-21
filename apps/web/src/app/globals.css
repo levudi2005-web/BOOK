@@ -167,8 +167,18 @@
 
 .tiptap {
   overflow-wrap: anywhere;
-  padding: 1rem;
+  padding: 1.25rem;
   color: rgb(var(--foreground));
+  font-size: 1.02rem;
+}
+
+/* Desktop viết sách: nội dung như một trang giấy, không kéo dài hết màn hình. */
+@media (min-width: 768px) {
+  .tiptap {
+    max-width: 48rem;
+    margin-inline: auto;
+    padding: 2rem 3rem;
+  }
 }
 
 .tiptap > :first-child,

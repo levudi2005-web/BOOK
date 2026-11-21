@@ -1041,6 +1041,7 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
                     value={chapterTitle}
                     maxLength={300}
                     required
+                    className="text-center font-serif text-lg"
                     onChange={(event) => {
                       chapterRevisionRef.current += 1;
                       setChapterTitle(event.target.value);
