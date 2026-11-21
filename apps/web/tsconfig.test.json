@@ -8,6 +8,6 @@
     "rootDir": ".",
     "types": ["node"]
   },
-  "include": ["src/lib/api-url.ts", "src/lib/studio-validation.ts", "test/**/*.ts"],
+  "include": ["src/lib/api-url.ts", "src/lib/api.ts", "src/lib/studio-validation.ts", "test/**/*.ts"],
   "exclude": ["node_modules", ".next", "dist-test"]
 }

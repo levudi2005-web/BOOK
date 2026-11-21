@@ -106,8 +106,8 @@ export type BookListResponse = {
 };
 
 export type BookDetail = ApiBook & {
-  authors: ApiAuthor[];
-  categories: ApiCategory[];
+  authors: Pick<ApiAuthor, 'author_id' | 'author_uuid' | 'name' | 'slug'>[];
+  categories: Pick<ApiCategory, 'category_id' | 'name' | 'slug'>[];
 };
 
 export type BookQuery = {
@@ -754,7 +754,11 @@ export async function removeFromLibrary(slug: string): Promise<{ status: string 
   return request(`/library/${slug}`, { method: 'DELETE' });
 }
 
-export async function getProgress(slug: string): Promise<{ percentComplete: number; isCompleted: boolean }> {
+export async function getProgress(slug: string): Promise<{
+  percentComplete: number;
+  isCompleted: boolean;
+  chapterUuid: string | null;
+}> {
   return request(`/progress/${slug}`);
 }
 

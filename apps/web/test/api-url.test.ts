@@ -6,6 +6,7 @@ import {
   normalizeApiBase,
   resolveApiBaseStatus,
 } from '../src/lib/api-url.js';
+import { fetchBooks } from '../src/lib/api.js';
 
 // The public production API base configured for the frontend build.
 const PRODUCTION_API_BASE = 'https://freedombook.duckdns.org/api';
@@ -95,4 +96,41 @@ test('an absolute API host that happens to be a Worker is allowed when configure
   const status = resolveApiBaseStatus(explicit, { hostname: WORKER_HOST });
   assert.equal(status.misrouted, false);
   assert.equal(joinApiUrl(status.base, '/auth/login'), `${explicit}/auth/login`);
+});
+
+test('fetchBooks forwards the year filter alongside other catalog filters', async () => {
+  const originalFetch = globalThis.fetch;
+  let requestedUrl = '';
+  globalThis.fetch = async (input) => {
+    requestedUrl = String(input);
+    return new Response(
+      JSON.stringify({ data: [], meta: { page: 1, limit: 12, total: 0, totalPages: 0 } }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+  };
+
+  try {
+    await fetchBooks({
+      q: 'sample',
+      category: 'fiction',
+      author: 'writer',
+      publisher: 'press',
+      year: '2024',
+      sort: 'rating',
+      page: 2,
+      limit: 12,
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  const params = new URL(requestedUrl, 'https://test.example').searchParams;
+  assert.equal(params.get('q'), 'sample');
+  assert.equal(params.get('category'), 'fiction');
+  assert.equal(params.get('author'), 'writer');
+  assert.equal(params.get('publisher'), 'press');
+  assert.equal(params.get('year'), '2024');
+  assert.equal(params.get('sort'), 'rating');
+  assert.equal(params.get('page'), '2');
+  assert.equal(params.get('limit'), '12');
 });

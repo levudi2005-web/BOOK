@@ -88,16 +88,30 @@ export class SocialService {
 
   async getProgress(userId: number, slug: string) {
     const book = await this.resolveBook(slug);
-    const rows = await this.db.query<Record<string, unknown>[]>(
-      `SELECT chapter_id, percent_complete, is_completed, completed_at, last_read_at
-       FROM reading_progress WHERE user_id = ? AND book_id = ? LIMIT 1`,
+    const rows = await this.db.query<
+      {
+        percent_complete: number | string;
+        is_completed: number;
+        completed_at: Date | string | null;
+        last_read_at: Date | string | null;
+        chapter_uuid: string | null;
+      }[]
+    >(
+      `SELECT rp.percent_complete, rp.is_completed, rp.completed_at, rp.last_read_at,
+              bc.chapter_uuid
+       FROM reading_progress rp
+       LEFT JOIN book_chapters bc ON bc.chapter_id = rp.chapter_id
+       WHERE rp.user_id = ? AND rp.book_id = ? LIMIT 1`,
       [userId, book.book_id],
     );
-    if (rows.length === 0) return { percentComplete: 0, isCompleted: false };
+    if (rows.length === 0) {
+      return { percentComplete: 0, isCompleted: false, chapterUuid: null };
+    }
     const row = rows[0];
     return {
       percentComplete: Number(row.percent_complete),
       isCompleted: Number(row.is_completed) === 1,
+      chapterUuid: row.chapter_uuid,
       lastReadAt: row.last_read_at,
       completedAt: row.completed_at,
     };

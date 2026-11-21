@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import {
   fetchBook,
+  fetchBookChapters,
   addComment,
   addReview,
   addToLibrary,
@@ -16,6 +17,7 @@ import {
   publicCoverUrl,
   updateComment,
   type BookDetail as BookDetailData,
+  type Chapter,
 } from '@/lib/api';
 import { PageHeader } from '@/components/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -34,6 +36,9 @@ export function BookDetail() {
   const [book, setBook] = useState<BookDetailData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [chapters, setChapters] = useState<Chapter[]>([]);
+  const [chaptersLoading, setChaptersLoading] = useState(true);
+  const [chaptersError, setChaptersError] = useState(false);
   const [comments, setComments] = useState<{ comment_uuid: string; body: string; username: string; user_uuid: string; created_at: string }[]>([]);
   const [myUuid, setMyUuid] = useState('');
   const [editingUuid, setEditingUuid] = useState('');
@@ -66,6 +71,7 @@ export function BookDetail() {
   useEffect(() => {
     let active = true;
     setLoading(true);
+    setError('');
     fetchBook(slug)
       .then((data) => {
         if (active) setBook(data);
@@ -75,6 +81,20 @@ export function BookDetail() {
       })
       .finally(() => {
         if (active) setLoading(false);
+      });
+    setChaptersLoading(true);
+    setChaptersError(false);
+    fetchBookChapters(slug)
+      .then((response) => {
+        if (active) setChapters(response.data);
+      })
+      .catch(() => {
+        if (!active) return;
+        setChapters([]);
+        setChaptersError(true);
+      })
+      .finally(() => {
+        if (active) setChaptersLoading(false);
       });
     void loadSocial();
     return () => {
@@ -225,14 +245,24 @@ export function BookDetail() {
 
             {book.authors.length > 0 ? (
               <p className="mt-4 text-sm text-muted-foreground">
-                Tác giả: {book.authors.map((author) => author.name).join(', ')}
+                Tác giả:{' '}
+                {book.authors.map((author, index) => (
+                  <span key={author.author_uuid}>
+                    {index > 0 ? ', ' : null}
+                    <Link href={`/authors/${encodeURIComponent(author.slug)}`} className="text-primary hover:underline">
+                      {author.name}
+                    </Link>
+                  </span>
+                ))}
               </p>
             ) : null}
 
             {book.categories.length > 0 ? (
               <div className="mt-3 flex flex-wrap gap-2">
                 {book.categories.map((category) => (
-                  <Badge key={category.category_id} variant="muted">{category.name}</Badge>
+                  <Link key={category.category_id} href={`/discover?category=${encodeURIComponent(category.slug)}`}>
+                    <Badge variant="muted">{category.name}</Badge>
+                  </Link>
                 ))}
               </div>
             ) : null}
@@ -242,6 +272,36 @@ export function BookDetail() {
               <p className="text-sm leading-relaxed text-muted-foreground">
                 {book.description || 'Chưa có mô tả cho sách này.'}
               </p>
+            </Card>
+
+            <Card className="mt-6 p-6">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <h2 className="font-serif text-xl text-foreground">Mục lục</h2>
+                {!chaptersLoading && !chaptersError ? (
+                  <span className="text-sm text-muted-foreground">{chapters.length} chương</span>
+                ) : null}
+              </div>
+              {chaptersLoading ? (
+                <Skeleton className="h-20 rounded-xl" />
+              ) : chaptersError ? (
+                <p role="status" className="text-sm text-destructive">Không thể tải mục lục. Vui lòng thử lại sau.</p>
+              ) : chapters.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Sách chưa có chương công khai.</p>
+              ) : (
+                <ol className="max-h-80 space-y-1 overflow-y-auto">
+                  {chapters.map((chapter) => (
+                    <li key={chapter.chapter_uuid}>
+                      <Link
+                        href={`/reader/${book.slug}?chapter=${encodeURIComponent(chapter.chapter_uuid)}`}
+                        className="block rounded-lg px-3 py-2 text-sm text-foreground hover:bg-surface"
+                      >
+                        <span className="mr-2 text-muted-foreground">{chapter.chapter_number}.</span>
+                        {chapter.title}
+                      </Link>
+                    </li>
+                  ))}
+                </ol>
+              )}
             </Card>
 
             <div className="mt-6 flex flex-wrap gap-3">

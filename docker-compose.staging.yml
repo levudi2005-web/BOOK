@@ -56,7 +56,7 @@ services:
           - meilisearch-staging
 
   api-staging:
-    image: bookforfreedom-api
+    image: bookforfreedom-api:staging
     restart: unless-stopped
     mem_limit: 256m
     environment:

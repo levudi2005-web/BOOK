@@ -32,7 +32,7 @@ export function AdminLogin() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4 py-12">
+    <main className="flex min-h-screen items-center justify-center bg-background px-4 py-12">
       <Card className="w-full max-w-md p-7 sm:p-8">
         <div className="mb-7 flex justify-center">
           <Logo />
@@ -58,6 +58,6 @@ export function AdminLogin() {
           </Button>
         </form>
       </Card>
-    </div>
+    </main>
   );
 }

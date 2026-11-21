@@ -161,6 +161,10 @@ test('history: ghi nhận chương đang đọc và trả dữ liệu deep-link 
   );
   assert.equal(saved.status, 200);
 
+  const progress = await jsonRequest(`${app.url}/progress/${slug}`, 'GET', undefined, auth(userA.token));
+  assert.equal(progress.status, 200);
+  assert.equal(progress.body.chapterUuid, chapterOneUuid);
+
   const history = await jsonRequest(`${app.url}/history`, 'GET', undefined, auth(userA.token));
   assert.equal(history.status, 200);
   const item = (history.body.data as Record<string, unknown>[]).find((row) => row.slug === slug);
