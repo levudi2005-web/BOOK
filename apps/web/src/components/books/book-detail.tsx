@@ -252,6 +252,19 @@ export function BookDetail() {
                   </span>
                 ))}
               </p>
+            ) : book.author_name ? (
+              <p className="mt-4 text-sm text-muted-foreground">Tác giả: {book.author_name}</p>
+            ) : null}
+
+            {book.publisher_name || book.publication_year ? (
+              <p className="mt-1 text-sm text-muted-foreground">
+                {[
+                  book.publisher_name ? `Nhà xuất bản: ${book.publisher_name}` : '',
+                  book.publication_year ? `Năm xuất bản: ${book.publication_year}` : '',
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </p>
             ) : null}
 
             {book.categories.length > 0 ? (

@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
+import { BookCover } from '@/components/books/book-cover';
 import { SearchIcon } from '@/components/icons';
 
 type Hit = {
@@ -16,6 +17,7 @@ type Hit = {
   title?: string;
   subtitle?: string | null;
   authors?: string;
+  cover_storage_key?: string | null;
 };
 
 export function SearchResults() {
@@ -102,14 +104,28 @@ export function SearchResults() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {hits.map((hit) => (
           <Link key={hit.id ?? hit.slug} href={`/books/${hit.slug ?? ''}`} className="focus-ring block">
-            <Card className="h-full p-5 transition hover:bg-surface">
-              <h3 className="line-clamp-2 font-serif text-lg text-foreground">{hit.title ?? 'Không rõ tiêu đề'}</h3>
-              {hit.subtitle ? (
-                <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{hit.subtitle}</p>
-              ) : null}
-              {hit.authors ? (
-                <p className="mt-3 text-xs text-muted-foreground">{hit.authors}</p>
-              ) : null}
+            <Card className="flex h-full gap-4 p-4 transition hover:bg-surface">
+              <div className="w-16 shrink-0 sm:w-20">
+                <BookCover
+                  title={hit.title ?? 'Sách'}
+                  subtitle={hit.subtitle ?? null}
+                  authorName={hit.authors ?? null}
+                  slug={hit.slug ?? ''}
+                  coverKey={hit.cover_storage_key ?? null}
+                  isPublic
+                  showSpine={false}
+                  placeholderLabel="Chưa có bìa"
+                />
+              </div>
+              <div className="min-w-0">
+                <h3 className="line-clamp-2 font-serif text-lg text-foreground">{hit.title ?? 'Không rõ tiêu đề'}</h3>
+                {hit.subtitle ? (
+                  <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{hit.subtitle}</p>
+                ) : null}
+                {hit.authors ? (
+                  <p className="mt-3 truncate text-xs text-muted-foreground">{hit.authors}</p>
+                ) : null}
+              </div>
             </Card>
           </Link>
         ))}
