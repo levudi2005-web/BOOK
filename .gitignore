@@ -3,8 +3,18 @@
 !.env.example
 node_modules/
 dist/
+dist-test/
 build/
 coverage/
+.next/
+**/.next/
+*.tsbuildinfo
+.open-next/
+**/.open-next/
+.wrangler/
+**/.wrangler/
+.dev.vars
+**/.dev.vars
 .venv/
 venv/
 __pycache__/
@@ -12,3 +22,10 @@ __pycache__/
 *.log
 .DS_Store
 Thumbs.db
+
+# Playwright test artifacts
+e2e/test-results/
+e2e/playwright-report/
+**/test-results/
+**/playwright-report/
+

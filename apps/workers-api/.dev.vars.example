@@ -1,0 +1,2 @@
+# Secrets for local preview (copy to .dev.vars; never commit real values).
+GATEWAY_HMAC_SECRET=replace-this-gateway-hmac-secret

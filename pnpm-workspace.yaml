@@ -4,3 +4,11 @@ packages:
 allowBuilds:
   esbuild: true
   msgpackr-extract: true
+  rclone.js: true
+  workerd: true
+minimumReleaseAgeExclude:
+  - '@cloudflare/workers-utils@0.56.0'
+  - '@opennextjs/aws@4.2.0'
+  - '@opennextjs/cloudflare@1.20.18'
+  - miniflare@5.20261119.0-beta
+  - wrangler@4.166.0

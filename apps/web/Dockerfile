@@ -4,6 +4,9 @@ WORKDIR /workspace
 RUN corepack enable
 COPY . .
 RUN pnpm install --frozen-lockfile
+# NEXT_PUBLIC_* phải có mặt ở build time để Next.js inline vào client bundle.
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 RUN pnpm --filter @bff/web build
 
 FROM node:22-alpine AS runner

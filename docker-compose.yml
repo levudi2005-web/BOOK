@@ -1,31 +1,49 @@
 services:
-  postgres:
-    image: postgres:17-alpine
+  mariadb:
+    image: mariadb:10.11
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-bookforfreedom}
-      POSTGRES_USER: ${POSTGRES_USER:-bff_dev}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-replace-this-local-dev-password}
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-replace-this-mariadb-root-password}
+      BOOKUSER_DB_USER: ${BOOKUSER_DB_USER:-app_bookuser}
+      BOOKUSER_DB_PASSWORD: ${BOOKUSER_DB_PASSWORD:-replace-this-bookuser-password}
+      BOOKADMIN_DB_USER: ${BOOKADMIN_DB_USER:-app_bookadmin}
+      BOOKADMIN_DB_PASSWORD: ${BOOKADMIN_DB_PASSWORD:-replace-this-bookadmin-password}
+      TZ: ${TZ:-UTC}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+00:00
+      - --sql-mode=STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${MARIADB_PORT:-3307}:3306"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - mariadb_data:/var/lib/mysql
+      - ./database/sql:/opt/bookfreedom/sql:ro
+      - ./infra/docker/mariadb/init.sh:/docker-entrypoint-initdb.d/10-bookfreedom.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 5s
       timeout: 5s
-      retries: 10
-      start_period: 10s
+      retries: 30
+      start_period: 20s
 
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-replace-this-redis-password}
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --requirepass
+      - ${REDIS_PASSWORD:-replace-this-redis-password}
     ports:
       - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -38,6 +56,7 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-replace-this-minio-password}
       MINIO_API_PORT_NUMBER: 9000
       MINIO_CONSOLE_PORT_NUMBER: 9001
+      TZ: ${TZ:-UTC}
     ports:
       - "127.0.0.1:${MINIO_PORT:-9000}:9000"
       - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
@@ -55,7 +74,9 @@ services:
     restart: unless-stopped
     environment:
       MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-replace-this-meilisearch-development-key}
-      MEILI_ENV: development
+      MEILI_ENV: ${MEILI_ENV:-production}
+      MEILI_NO_ANALYTICS: ${MEILI_NO_ANALYTICS:-true}
+      TZ: ${TZ:-UTC}
     ports:
       - "127.0.0.1:7700:7700"
     volumes:
@@ -75,12 +96,48 @@ services:
     environment:
       NODE_ENV: production
       API_PORT: 3001
-      DATABASE_URL: postgresql://${POSTGRES_USER:-bff_dev}:${POSTGRES_PASSWORD:-replace-this-local-dev-password}@postgres:5432/${POSTGRES_DB:-bookforfreedom}
-      REDIS_URL: redis://redis:6379
+      TZ: ${TZ:-UTC}
+      APP_ENV: ${APP_ENV:-production}
+      APP_NAME: ${APP_NAME:-BOOKFORFREEDOM}
+      APP_URL: ${APP_URL:-https://freedombook.duckdns.org}
+      API_PUBLIC_URL: ${API_PUBLIC_URL:-https://freedombook.duckdns.org/api}
+      WEB_PUBLIC_URL: ${WEB_PUBLIC_URL:-https://freedombook.duckdns.org}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      SESSION_SECRET: ${SESSION_SECRET:-replace-this-session-secret-before-use}
+      SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-bff_session}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      COOKIE_SAME_SITE: ${COOKIE_SAME_SITE:-lax}
+      TOKEN_HMAC_SECRET: ${TOKEN_HMAC_SECRET:-replace-this-token-hmac-secret-before-use}
+      RECOVERY_KEY_HMAC_SECRET: ${RECOVERY_KEY_HMAC_SECRET:-replace-this-recovery-key-hmac-secret-before-use}
+      GATEWAY_HMAC_SECRET: ${GATEWAY_HMAC_SECRET:-replace-this-gateway-hmac-secret-before-use}
+      BOOKUSER_DB_HOST: mariadb
+      BOOKUSER_DB_PORT: 3306
+      BOOKUSER_DB_NAME: bookuser
+      BOOKUSER_DB_USER: ${BOOKUSER_DB_USER:-app_bookuser}
+      BOOKUSER_DB_PASSWORD: ${BOOKUSER_DB_PASSWORD:-replace-this-bookuser-password}
+      BOOKADMIN_DB_HOST: mariadb
+      BOOKADMIN_DB_PORT: 3306
+      BOOKADMIN_DB_NAME: bookadmin
+      BOOKADMIN_DB_USER: ${BOOKADMIN_DB_USER:-app_bookadmin}
+      BOOKADMIN_DB_PASSWORD: ${BOOKADMIN_DB_PASSWORD:-replace-this-bookadmin-password}
+      DATABASE_URL: mysql://${BOOKUSER_DB_USER:-app_bookuser}:${BOOKUSER_DB_PASSWORD:-replace-this-bookuser-password}@mariadb:3306/bookuser
+      BOOKADMIN_DATABASE_URL: mysql://${BOOKADMIN_DB_USER:-app_bookadmin}:${BOOKADMIN_DB_PASSWORD:-replace-this-bookadmin-password}@mariadb:3306/bookadmin
+      REDIS_URL: redis://:${REDIS_PASSWORD:-replace-this-redis-password}@redis:6379
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: "false"
+      MEILI_HOST: http://meilisearch:7700
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-replace-this-meilisearch-development-key}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: "${SMTP_FROM:-BOOKFORFREEDOM <noreply@freedombook.duckdns.org>}"
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
     ports:
       - "127.0.0.1:3001:3001"
     depends_on:
-      postgres:
+      mariadb:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -89,18 +146,28 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://freedombook.duckdns.org/api}
     restart: unless-stopped
     environment:
       NODE_ENV: production
       HOSTNAME: 0.0.0.0
       PORT: 3000
+      TZ: ${TZ:-UTC}
+      APP_ENV: ${APP_ENV:-production}
+      APP_NAME: ${APP_NAME:-BOOKFORFREEDOM}
+      APP_URL: ${APP_URL:-https://freedombook.duckdns.org}
+      API_PUBLIC_URL: ${API_PUBLIC_URL:-https://freedombook.duckdns.org/api}
+      WEB_PUBLIC_URL: ${WEB_PUBLIC_URL:-https://freedombook.duckdns.org}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://freedombook.duckdns.org/api}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
     ports:
       - "127.0.0.1:3000:3000"
     depends_on:
       - api
 
 volumes:
-  postgres_data:
+  mariadb_data:
   redis_data:
   minio_data:
   meilisearch_data:

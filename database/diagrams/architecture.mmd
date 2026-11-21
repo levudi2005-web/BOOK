@@ -1,0 +1,57 @@
+%% =====================================================================
+%% BOOKFORFREEDOM - Kien truc du lieu hai schema (MariaDB 10.11)
+%% Render: mmdc -i architecture.mmd -o architecture.svg
+%% =====================================================================
+flowchart LR
+  subgraph CLIENT["Nguoi dung & trinh duyet"]
+    WEB["apps/web<br/>Next.js"]
+  end
+
+  subgraph APP["Ung dung"]
+    API["apps/api<br/>NestJS REST<br/>/health"]
+    WORKER["apps/worker<br/>BullMQ"]
+  end
+
+  subgraph BU["Schema bookuser (du lieu nguoi dung)"]
+    direction TB
+    BU_CORE["users, user_profiles, user_sessions<br/>books, authors, chapters, files"]
+    BU_ENGAGE["reviews, comments, user_library<br/>reading_progress, notifications"]
+    BU_OUT[("integration_outbox")]
+    BU_IN[("integration_inbox")]
+    BU_VIEW["v_public_announcements<br/>SQL SECURITY INVOKER"]
+  end
+
+  subgraph BA["Schema bookadmin (quan tri & kiem duyet)"]
+    direction TB
+    BA_RBAC["admin_accounts, admin_roles<br/>admin_permissions, admin_role_permissions<br/>admin_sessions, admin_mfa_methods"]
+    BA_MOD["content_reports, moderation_cases<br/>moderation_actions, user_restrictions<br/>book_rights_reviews, report_reasons"]
+    BA_OPS["system_settings, feature_flags<br/>maintenance_windows, system_metrics_daily"]
+    BA_AUDIT["admin_audit_logs (append-only)<br/>security_events, admin_login_attempts"]
+    BA_OUT[("integration_outbox")]
+    BA_IN[("integration_inbox")]
+    BA_ANN[("admin_announcements")]
+    BA_VIEWS["v_user_summary<br/>v_book_summary"]
+  end
+
+  WEB -->|HTTPS| API
+  API -->|doc/ghi| BU_CORE
+  API -->|doc/ghi| BU_ENGAGE
+  API -->|RBAC + kiem duyet| BA_RBAC
+  API -->|xu ly bao cao| BA_MOD
+  API -->|cau hinh| BA_OPS
+  API -->|ghi audit| BA_AUDIT
+  WORKER -->|poll pending| BU_OUT
+  WORKER -->|poll pending| BA_OUT
+
+  BU_OUT -->|"event_id (UUID)<br/>it nhat mot lan"| BA_IN
+  BA_OUT -->|"event_id (UUID)<br/>it nhat mot lan"| BU_IN
+  BU_IN -.->|"tieu thu idempotent"| BA_MOD
+  BU_VIEW -.->|"SELECT khi co GRANT"| BA_ANN
+  BA_VIEWS -.->|"tong hop theo user_id/book_id"| BA_MOD
+
+  NOTE1["Khong co FK xuyen database.<br/>Lien ket cheo dung user_id/book_id/UUID<br/>va duoc doi soat dinh ky."]
+  NOTE1 -.-> BU_CORE
+  NOTE1 -.-> BA_MOD
+
+  NOTE2["Outbox: ghi cung transaction nghiep vu.<br/>Inbox: UNIQUE(event_id) chong trung.<br/>Retry: attempt_count + next_attempt_at.<br/>Sau max_attempts: dead_letter."]
+  WORKER -.-> NOTE2

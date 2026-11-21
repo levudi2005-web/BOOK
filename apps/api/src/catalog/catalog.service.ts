@@ -1,0 +1,169 @@
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { DatabaseService, type QueryValue } from '../database/database.service.js';
+
+type Row = Record<string, unknown>;
+
+const publicStatusFilter = `b.deleted_at IS NULL AND b.visibility = 'public' AND b.status IN ('approved', 'published')`;
+
+const sortOptions: Record<string, string> = {
+  newest: 'b.published_at DESC',
+  popular: 'b.view_count DESC',
+  rating: 'b.average_rating DESC',
+  title: 'b.title ASC',
+};
+
+@Injectable()
+export class CatalogService {
+  constructor(private readonly db: DatabaseService) {}
+
+  async listBooks(query: Record<string, string>) {
+    const page = Math.max(1, Number.parseInt(query.page ?? '1', 10) || 1);
+    const limit = Math.min(50, Math.max(1, Number.parseInt(query.limit ?? '20', 10) || 20));
+    const offset = (page - 1) * limit;
+
+    const where: string[] = [publicStatusFilter];
+    const params: QueryValue[] = [];
+
+    if (query.q) {
+      where.push('(b.title LIKE ? OR b.subtitle LIKE ? OR b.description LIKE ?)');
+      const like = `%${query.q}%`;
+      params.push(like, like, like);
+    }
+    if (query.category) {
+      where.push(
+        'EXISTS (SELECT 1 FROM book_categories bc JOIN categories c ON c.category_id = bc.category_id WHERE bc.book_id = b.book_id AND c.slug = ?)',
+      );
+      params.push(query.category);
+    }
+    if (query.author) {
+      where.push(
+        'EXISTS (SELECT 1 FROM book_authors ba JOIN authors a ON a.author_id = ba.author_id WHERE ba.book_id = b.book_id AND a.slug = ?)',
+      );
+      params.push(query.author);
+    }
+    if (query.publisher) {
+      where.push(
+        'EXISTS (SELECT 1 FROM publishers p WHERE p.publisher_id = b.publisher_id AND p.slug = ?)',
+      );
+      params.push(query.publisher);
+    }
+    if (query.year) {
+      where.push('YEAR(b.publication_date) = ?');
+      params.push(Number(query.year));
+    }
+
+    const orderBy = sortOptions[query.sort ?? 'newest'] ?? sortOptions.newest;
+
+    const [{ total }] = await this.db.query<{ total: number }[]>(
+      `SELECT COUNT(*) AS total FROM books b WHERE ${where.join(' AND ')}`,
+      params,
+    );
+
+    const rows = await this.db.query<Row[]>(
+      `SELECT b.book_uuid, b.slug, b.title, b.subtitle, b.description, b.language,
+              b.publication_date, b.page_count, b.word_count, b.cover_storage_key,
+              b.average_rating, b.rating_count, b.review_count, b.view_count,
+              b.download_count, b.published_at
+       FROM books b
+       WHERE ${where.join(' AND ')}
+       ORDER BY ${orderBy}
+       LIMIT ? OFFSET ?`,
+      [...params, limit, offset],
+    );
+
+    return {
+      data: rows,
+      meta: { page, limit, total: Number(total), totalPages: Math.ceil(Number(total) / limit) },
+    };
+  }
+
+  async getBook(slug: string) {
+    const books = await this.db.query<Row[]>(
+      `SELECT b.book_uuid, b.slug, b.title, b.subtitle, b.description, b.excerpt,
+              b.isbn_13, b.isbn_10, b.language, b.publication_date, b.edition,
+              b.page_count, b.word_count, b.cover_storage_key, b.cover_mime_type,
+              b.average_rating, b.rating_count, b.review_count, b.view_count,
+              b.download_count, b.published_at, b.book_id
+       FROM books b
+       WHERE b.slug = ? AND ${publicStatusFilter}
+       LIMIT 1`,
+      [slug],
+    );
+
+    if (books.length === 0) {
+      throw new NotFoundException('Book not found');
+    }
+
+    const book = books[0];
+    const bookId = book.book_id as number;
+
+    const [authors, categories] = await Promise.all([
+      this.db.query<Row[]>(
+        `SELECT a.author_id, a.author_uuid, a.name, a.slug
+         FROM authors a
+         JOIN book_authors ba ON ba.author_id = a.author_id
+         WHERE ba.book_id = ? AND a.deleted_at IS NULL
+         ORDER BY ba.author_order`,
+        [bookId],
+      ),
+      this.db.query<Row[]>(
+        `SELECT c.category_id, c.name, c.slug
+         FROM categories c
+         JOIN book_categories bc ON bc.category_id = c.category_id
+         WHERE bc.book_id = ?
+         ORDER BY bc.is_primary DESC, c.name`,
+        [bookId],
+      ),
+    ]);
+
+    delete book.book_id;
+    return { ...book, authors, categories };
+  }
+
+  async listCategories() {
+    const rows = await this.db.query<Row[]>(
+      `SELECT category_id, parent_category_id, name, slug, description, sort_order, is_active
+       FROM categories
+       WHERE is_active = 1
+       ORDER BY sort_order, name`,
+    );
+    return { data: rows };
+  }
+
+  async listAuthors() {
+    const rows = await this.db.query<Row[]>(
+      `SELECT author_id, author_uuid, name, slug, bio
+       FROM authors
+       WHERE deleted_at IS NULL
+       ORDER BY name`,
+    );
+    return { data: rows };
+  }
+
+  async listPublishers() {
+    const rows = await this.db.query<Row[]>(
+      `SELECT publisher_id, name, slug, description
+       FROM publishers
+       WHERE deleted_at IS NULL
+       ORDER BY name`,
+    );
+    return { data: rows };
+  }
+
+  /** Public chapters for the reader (published book). */
+  async getBookChapters(slug: string) {
+    const books = await this.db.query<{ book_id: number }[]>(
+      `SELECT b.book_id FROM books b WHERE b.slug = ? AND ${publicStatusFilter} LIMIT 1`,
+      [slug],
+    );
+    if (books.length === 0) throw new NotFoundException('Book not found');
+    const rows = await this.db.query<Row[]>(
+      `SELECT chapter_uuid, chapter_number, title, content, word_count, sort_order
+       FROM book_chapters
+       WHERE book_id = ?
+       ORDER BY sort_order, chapter_number`,
+      [books[0].book_id],
+    );
+    return { data: rows };
+  }
+}

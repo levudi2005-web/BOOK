@@ -1,0 +1,296 @@
+%% ERD schema bookuser - BOOKFORFREEDOM (MariaDB 10.11)
+%% Sinh tu dong: 2026-11-20 18:22:54
+erDiagram
+  authors["authors<br/>Tác giả; quan hệ N-N với books qua book_authors"] {
+    bigint author_id PK
+    char author_uuid UK
+    varchar slug UK
+    enum status
+    datetime created_at
+  }
+  bookmarks["bookmarks<br/>Dấu trang và ghi chú đọc của người dùng"] {
+    bigint bookmark_id PK
+    bigint user_id FK
+    bigint book_id FK
+    bigint chapter_id FK
+    datetime created_at
+  }
+  books["books<br/>Thông tin sách; file PDF/EPUB chỉ lưu metadata trong book_files"] {
+    bigint book_id PK
+    char book_uuid UK
+    varchar slug UK
+    char isbn_13 UK
+    char isbn_10 UK
+    bigint publisher_id FK
+    enum status
+    bigint created_by_user_id FK
+    datetime created_at
+  }
+  book_authors["book_authors<br/>Bảng liên kết N-N books-authors, có thứ tự và vai trò tác giả"] {
+    bigint book_id PK
+    bigint author_id PK
+    datetime created_at
+  }
+  book_categories["book_categories<br/>Bảng liên kết N-N books-categories, tối đa một danh mục chính/sách"] {
+    bigint book_id PK
+    bigint category_id PK
+    bigint primary_book_id UK
+    datetime created_at
+  }
+  book_chapters["book_chapters<br/>Nội dung chương của sách, hỗ trợ mục lục phân cấp"] {
+    bigint chapter_id PK
+    char chapter_uuid UK
+    bigint book_id FK
+    bigint parent_chapter_id FK
+    enum status
+    datetime created_at
+  }
+  book_files["book_files<br/>Metadata tệp PDF/EPUB/MOBI trên object storage; không lưu file lớn trong DB"] {
+    bigint file_id PK
+    char file_uuid UK
+    bigint book_id FK
+    bigint primary_book_id UK
+    bigint uploaded_by_user_id FK
+    datetime created_at
+  }
+  book_rights["book_rights<br/>Quyền xuất bản/phân phối theo giấy phép và lãnh thổ; verified_by_admin_uuid là tham chiếu logic"] {
+    bigint rights_id PK
+    char rights_uuid UK
+    bigint book_id FK
+    bigint license_id FK
+    enum status
+    datetime created_at
+  }
+  book_tags["book_tags<br/>Bảng liên kết N-N books-tags"] {
+    bigint book_id PK
+    bigint tag_id PK
+    datetime created_at
+  }
+  categories["categories<br/>Danh mục sách phân cấp; quan hệ N-N với books qua book_categories"] {
+    bigint category_id PK
+    bigint parent_category_id FK
+    varchar slug UK
+    datetime created_at
+  }
+  comments["comments<br/>Bình luận và phản hồi theo sách/đánh giá; giới hạn độ sâu phân cấp"] {
+    bigint comment_id PK
+    char comment_uuid UK
+    bigint book_id FK
+    bigint user_id FK
+    bigint parent_comment_id FK
+    bigint review_id FK
+    enum status
+    datetime created_at
+  }
+  comment_reactions["comment_reactions<br/>Tương tác của người dùng với bình luận, tối đa một tương tác/người/bình luận"] {
+    bigint reaction_id PK
+    bigint comment_id FK
+    bigint user_id FK
+    datetime created_at
+  }
+  downloads["downloads<br/>Nhật ký tải tệp sách, phục vụ hạn mức và kiểm toán bản quyền"] {
+    bigint download_id PK
+    bigint user_id FK
+    bigint book_id FK
+    bigint file_id FK
+    bigint device_id FK
+    enum status
+    datetime created_at
+  }
+  email_verification_tokens["email_verification_tokens<br/>Token xác minh email dùng một lần, chỉ lưu hash SHA-256"] {
+    bigint token_id PK
+    bigint user_id FK
+    binary token_hash UK
+    datetime created_at
+  }
+  integration_inbox["integration_inbox<br/>Inbox idempotent của bookuser: nhận sự kiện từ bookadmin, chống trùng theo event_id"] {
+    bigint inbox_id PK
+    char event_id UK
+    enum status
+    datetime created_at
+  }
+  integration_outbox["integration_outbox<br/>Transactional outbox của bookuser: phát sự kiện sang bookadmin theo mô hình ít nhất một lần"] {
+    bigint outbox_id PK
+    char event_id UK
+    enum status
+    datetime created_at
+  }
+  licenses["licenses<br/>Danh mục giấy phép nội dung, tham chiếu bởi book_rights"] {
+    bigint license_id PK
+    varchar code UK
+    datetime created_at
+  }
+  notifications["notifications<br/>Thông báo trong ứng dụng cho người dùng; có thể dọn theo expires_at"] {
+    bigint notification_id PK
+    char notification_uuid UK
+    bigint user_id FK
+    datetime created_at
+  }
+  notification_preferences["notification_preferences<br/>Tùy chọn kênh và tần suất nhận thông báo theo từng loại"] {
+    bigint preference_id PK
+    bigint user_id FK
+    datetime created_at
+  }
+  password_reset_tokens["password_reset_tokens<br/>Token quên mật khẩu dùng một lần, chỉ lưu hash SHA-256"] {
+    bigint token_id PK
+    bigint user_id FK
+    binary token_hash UK
+    datetime created_at
+  }
+  publishers["publishers<br/>Nhà xuất bản của sách; quan hệ 1-N với books"] {
+    bigint publisher_id PK
+    varchar name UK
+    varchar slug UK
+    enum status
+    datetime created_at
+  }
+  reading_history["reading_history<br/>Lịch sử phiên đọc phục vụ thống kê và gợi ý; có thể phân vùng theo tháng khi tăng trưởng"] {
+    bigint history_id PK
+    bigint user_id FK
+    bigint book_id FK
+    bigint chapter_id FK
+    bigint session_id FK
+    bigint device_id FK
+    datetime created_at
+  }
+  reading_lists["reading_lists<br/>Danh sách đọc do người dùng tạo (private/unlisted/public)"] {
+    bigint list_id PK
+    char list_uuid UK
+    bigint user_id FK
+    bigint default_user_id UK
+    datetime created_at
+  }
+  reading_list_books["reading_list_books<br/>Bảng liên kết N-N reading_lists-books, có thứ tự hiển thị"] {
+    bigint list_id PK
+    bigint book_id PK
+  }
+  reading_progress["reading_progress<br/>Tiến độ đọc đồng bộ đa thiết bị; một bản ghi cho mỗi cặp (user, book)"] {
+    bigint progress_id PK
+    bigint user_id FK
+    bigint book_id FK
+    bigint chapter_id FK
+    bigint file_id FK
+    bigint device_id FK
+    datetime created_at
+  }
+  reviews["reviews<br/>Đánh giá sách; ràng buộc một đánh giá hiệu lực/người dùng/sách bằng khóa sinh"] {
+    bigint review_id PK
+    char review_uuid UK
+    bigint user_id FK
+    bigint book_id FK
+    enum status
+    datetime created_at
+  }
+  tags["tags<br/>Thẻ mô tả sách; quan hệ N-N với books qua book_tags"] {
+    bigint tag_id PK
+    varchar name UK
+    varchar slug UK
+    datetime created_at
+  }
+  users["users<br/>Tài khoản người đọc; mật khẩu chỉ lưu hash, xóa mềm bằng status/deleted_at"] {
+    bigint user_id PK
+    char user_uuid UK
+    varchar username UK
+    varchar email UK
+    enum status
+    datetime created_at
+  }
+  user_devices["user_devices<br/>Thiết bị người dùng dùng để quản lý phiên và thông báo đẩy"] {
+    bigint device_id PK
+    bigint user_id FK
+    char device_uuid UK
+    datetime created_at
+  }
+  user_follows["user_follows<br/>Quan hệ theo dõi N-N giữa người dùng, chặn tự theo dõi"] {
+    bigint follower_user_id PK
+    bigint followed_user_id PK
+    datetime created_at
+  }
+  user_library["user_library<br/>Thư viện cá nhân; chống trùng bằng khóa sinh active_book_id khi chưa xóa mềm"] {
+    bigint library_id PK
+    bigint user_id FK
+    bigint book_id FK
+    enum status
+    datetime created_at
+  }
+  user_profiles["user_profiles<br/>Hồ sơ công khai của người đọc, quan hệ 1-1 với users"] {
+    bigint profile_id PK
+    bigint user_id FK
+    datetime created_at
+  }
+  user_reports["user_reports<br/>Báo cáo vi phạm từ người dùng; admin nhận bản sao idempotent qua outbox/inbox"] {
+    bigint report_id PK
+    char report_uuid UK
+    bigint reporter_user_id FK
+    enum status
+    datetime created_at
+  }
+  user_sessions["user_sessions<br/>Phiên đăng nhập của người đọc; token chỉ lưu dạng hash"] {
+    bigint session_id PK
+    bigint user_id FK
+    bigint device_id FK
+    binary session_token_hash UK
+    datetime created_at
+  }
+  user_settings["user_settings<br/>Cấu hình cá nhân hóa trải nghiệm đọc, quan hệ 1-1 với users"] {
+    bigint setting_id PK
+    bigint user_id FK
+    datetime created_at
+  }
+  books ||--o{ bookmarks : "fk_bookmarks_book"
+  book_chapters ||--o{ bookmarks : "fk_bookmarks_chapter"
+  users ||--o{ bookmarks : "fk_bookmarks_user"
+  users ||--o{ books : "fk_books_created_by"
+  publishers ||--o{ books : "fk_books_publisher"
+  authors ||--o{ book_authors : "fk_book_authors_author"
+  books ||--o{ book_authors : "fk_book_authors_book"
+  books ||--o{ book_categories : "fk_book_categories_book"
+  categories ||--o{ book_categories : "fk_book_categories_category"
+  books ||--o{ book_chapters : "fk_book_chapters_book"
+  book_chapters ||--o{ book_chapters : "fk_book_chapters_parent"
+  books ||--o{ book_files : "fk_book_files_book"
+  users ||--o{ book_files : "fk_book_files_uploaded_by"
+  books ||--o{ book_rights : "fk_book_rights_book"
+  licenses ||--o{ book_rights : "fk_book_rights_license"
+  books ||--o{ book_tags : "fk_book_tags_book"
+  tags ||--o{ book_tags : "fk_book_tags_tag"
+  categories ||--o{ categories : "fk_categories_parent"
+  books ||--o{ comments : "fk_comments_book"
+  comments ||--o{ comments : "fk_comments_parent"
+  reviews ||--o{ comments : "fk_comments_review"
+  users ||--o{ comments : "fk_comments_user"
+  comments ||--o{ comment_reactions : "fk_comment_reactions_comment"
+  users ||--o{ comment_reactions : "fk_comment_reactions_user"
+  books ||--o{ downloads : "fk_downloads_book"
+  user_devices ||--o{ downloads : "fk_downloads_device"
+  book_files ||--o{ downloads : "fk_downloads_file"
+  users ||--o{ downloads : "fk_downloads_user"
+  users ||--o{ email_verification_tokens : "fk_email_verification_tokens_user"
+  users ||--o{ notifications : "fk_notifications_user"
+  users ||--o{ notification_preferences : "fk_notification_preferences_user"
+  users ||--o{ password_reset_tokens : "fk_password_reset_tokens_user"
+  books ||--o{ reading_history : "fk_reading_history_book"
+  book_chapters ||--o{ reading_history : "fk_reading_history_chapter"
+  user_devices ||--o{ reading_history : "fk_reading_history_device"
+  user_sessions ||--o{ reading_history : "fk_reading_history_session"
+  users ||--o{ reading_history : "fk_reading_history_user"
+  users ||--o{ reading_lists : "fk_reading_lists_user"
+  books ||--o{ reading_list_books : "fk_reading_list_books_book"
+  reading_lists ||--o{ reading_list_books : "fk_reading_list_books_list"
+  books ||--o{ reading_progress : "fk_reading_progress_book"
+  book_chapters ||--o{ reading_progress : "fk_reading_progress_chapter"
+  user_devices ||--o{ reading_progress : "fk_reading_progress_device"
+  book_files ||--o{ reading_progress : "fk_reading_progress_file"
+  users ||--o{ reading_progress : "fk_reading_progress_user"
+  books ||--o{ reviews : "fk_reviews_book"
+  users ||--o{ reviews : "fk_reviews_user"
+  users ||--o{ user_devices : "fk_user_devices_user"
+  users ||--o{ user_follows : "fk_user_follows_followed"
+  users ||--o{ user_follows : "fk_user_follows_follower"
+  books ||--o{ user_library : "fk_user_library_book"
+  users ||--o{ user_library : "fk_user_library_user"
+  users ||--o{ user_profiles : "fk_user_profiles_user"
+  users ||--o{ user_reports : "fk_user_reports_reporter"
+  user_devices ||--o{ user_sessions : "fk_user_sessions_device"
+  users ||--o{ user_sessions : "fk_user_sessions_user"
+  users ||--o{ user_settings : "fk_user_settings_user"
