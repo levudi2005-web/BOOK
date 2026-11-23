@@ -61,8 +61,7 @@ export function SiteFooter() {
         <div className="mt-10 flex flex-col gap-2 border-t border-border pt-6 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
           <p>© {new Date().getFullYear()} {siteConfig.name}. Bảo lưu mọi quyền.</p>
           <p className="sm:text-right">
-            Phiên bản đầu tiên {siteConfig.version} — Hoàn thiện Writing Studio &amp; Office Writer.
-            Các phiên bản sửa đổi và nâng cấp sau sẽ được cập nhật trong tương lai.
+            Phiên bản {siteConfig.version} đang nâng cấp và Website sẽ bị gián đoạn, các chức năng,UI/UX sẽ bị thay đổi toàn bộ, các chức năng mới sẽ được thêm vào và đồng bộ tối ưu nhất. Mọi tài khoản, tài liệu của bạn sẽ bị xóa bỏ toàn bộ để cấu hình lại docker hệ thống, xin cảm ơn. Bản v1 chỉ là bản test từ bản v2 trở đi sẽ là bản chính thức
           </p>
         </div>
       </div>

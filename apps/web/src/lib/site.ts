@@ -2,7 +2,7 @@ import { normalizeApiBase } from './api-url';
 
 export const siteConfig = {
   name: 'BOOKFORFREEDOM',
-  version: 'v1.1.0.0',
+  version: 'v2.1.0.0-USaD',
   tagline: 'Thư viện số cho những tâm hồn tự do.',
   description:
     'Nền tảng thư viện số cao cấp: viết, đọc, khám phá và chia sẻ sách trong một không gian yên tĩnh, có chiều sâu.',
