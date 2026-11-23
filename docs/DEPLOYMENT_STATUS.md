@@ -2,10 +2,10 @@
 
 ## Canonical domain
 
-- Front door: **https://freedombook.duckdns.org**
-- API: **https://freedombook.duckdns.org/api**
-- TLS: Certbot certificate on VPS Nginx, auto-renew.
-- Nginx proxies `/` to `127.0.0.1:3000` (VPS web container); `/api/` to `127.0.0.1:3001`.
+- Frontend chính: **https://bookfreedom.id.vn** (Cloudflare Worker)
+- API: **https://freedombook.duckdns.org/api** (VPS Nginx → API container)
+- VPS fallback/web container: `127.0.0.1:3000`; Nginx domain cũ vẫn có thể phục vụ fallback.
+- TLS: Cloudflare cho frontend; Certbot cho `freedombook.duckdns.org`.
 - Cloudflare Worker fallback: `https://bookforfreedom-web.levudi2005.workers.dev`
 - Staging Worker: `https://bookforfreedom-web-staging.levudi2005.workers.dev`
 - Staging API: `https://freedombook.duckdns.org/staging-api`
