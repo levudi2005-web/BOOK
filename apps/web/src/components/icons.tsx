@@ -38,6 +38,27 @@ export function MenuIcon(props: IconProps) {
   );
 }
 
+export function MoreVerticalIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="5" r="1.35" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.35" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="19" r="1.35" fill="currentColor" stroke="none" />
+    </Icon>
+  );
+}
+
+/** Horizontal “see more” affordance — larger dots than the vertical menu icon. */
+export function MoreHorizontalIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="4" cy="12" r="2.8" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="2.8" fill="currentColor" stroke="none" />
+      <circle cx="20" cy="12" r="2.8" fill="currentColor" stroke="none" />
+    </Icon>
+  );
+}
+
 export function CloseIcon(props: IconProps) {
   return (
     <Icon {...props}>

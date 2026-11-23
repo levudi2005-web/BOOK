@@ -143,6 +143,19 @@ export function LibraryExplorer() {
                 <p className="mt-2 text-xs text-muted-foreground">
                   {item.status.replaceAll('_', ' ')}
                   {item.finished_at ? ' · Đã hoàn thành' : ''}
+                  {Number(item.seconds_read ?? 0) > 0
+                    ? ` · ${Math.max(1, Math.floor(Number(item.seconds_read) / 60))} phút đọc`
+                    : ''}
+                </p>
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-primary"
+                    style={{ width: `${Math.min(100, Math.max(0, Number(item.progress_percent ?? 0)))}%` }}
+                  />
+                </div>
+                <p className="mt-1 text-[10px] text-muted-foreground">
+                  {Math.round(Number(item.progress_percent ?? 0))}% tiến độ
+                  {item.page_number && item.total_pages ? ` · trang ${item.page_number}/${item.total_pages}` : ''}
                 </p>
                 <div className="mt-4 flex flex-wrap gap-2">
                   <Link href={`/reader/${item.slug}`} className="inline-flex h-9 items-center rounded-full bg-primary px-4 text-sm text-primary-foreground">

@@ -29,9 +29,11 @@ export class CatalogService {
     const params: QueryValue[] = [];
 
     if (query.q) {
-      where.push('(b.title LIKE ? OR b.subtitle LIKE ? OR b.description LIKE ?)');
+      where.push(
+        '(b.title LIKE ? OR b.subtitle LIKE ? OR b.description LIKE ? OR b.author_name LIKE ? OR b.publisher_name LIKE ?)',
+      );
       const like = `%${query.q}%`;
-      params.push(like, like, like);
+      params.push(like, like, like, like, like);
     }
     if (query.category) {
       where.push(
@@ -40,16 +42,33 @@ export class CatalogService {
       params.push(query.category);
     }
     if (query.author) {
+      // Accept both an author slug (author pages) and a typed author name.
       where.push(
-        'EXISTS (SELECT 1 FROM book_authors ba JOIN authors a ON a.author_id = ba.author_id WHERE ba.book_id = b.book_id AND a.slug = ?)',
+        '(EXISTS (SELECT 1 FROM book_authors ba JOIN authors a ON a.author_id = ba.author_id WHERE ba.book_id = b.book_id AND a.slug = ?) OR b.author_name LIKE ?)',
       );
-      params.push(query.author);
+      params.push(query.author, `%${query.author}%`);
     }
     if (query.publisher) {
       where.push(
-        'EXISTS (SELECT 1 FROM publishers p WHERE p.publisher_id = b.publisher_id AND p.slug = ?)',
+        '(EXISTS (SELECT 1 FROM publishers p WHERE p.publisher_id = b.publisher_id AND p.slug = ?) OR b.publisher_name LIKE ?)',
       );
-      params.push(query.publisher);
+      params.push(query.publisher, `%${query.publisher}%`);
+    }
+    if (query.categories) {
+      const slugs = query.categories.split(',').map((slug) => slug.trim()).filter(Boolean);
+      if (slugs.length > 0) {
+        const placeholders = slugs.map(() => '?').join(',');
+        where.push(
+          `EXISTS (SELECT 1 FROM book_categories bc JOIN categories c ON c.category_id = bc.category_id WHERE bc.book_id = b.book_id AND c.slug IN (${placeholders}))`,
+        );
+        params.push(...slugs);
+      }
+    }
+    if (query.group) {
+      where.push(
+        'EXISTS (SELECT 1 FROM book_categories bc JOIN categories c ON c.category_id = bc.category_id WHERE bc.book_id = b.book_id AND c.parent_category_id = (SELECT category_id FROM categories WHERE slug = ? AND parent_category_id IS NULL LIMIT 1))',
+      );
+      params.push(query.group);
     }
     if (query.year) {
       where.push('YEAR(b.publication_date) = ?');
@@ -67,7 +86,7 @@ export class CatalogService {
       `SELECT b.book_uuid, b.slug, b.title, b.subtitle, b.description, b.language,
               b.publication_date, b.page_count, b.word_count, b.cover_storage_key,
               b.average_rating, b.rating_count, b.review_count, b.view_count,
-              b.download_count, b.published_at,
+              b.download_count, b.published_at, b.age_rating,
               b.author_name, b.publisher_name, b.publication_year
        FROM books b
        WHERE ${where.join(' AND ')}
@@ -88,7 +107,9 @@ export class CatalogService {
               b.isbn_13, b.isbn_10, b.language, b.publication_date, b.edition,
               b.page_count, b.word_count, b.cover_storage_key, b.cover_mime_type,
               b.average_rating, b.rating_count, b.review_count, b.view_count,
-              b.download_count, b.published_at, b.book_id,
+              b.download_count, b.published_at, b.age_rating, b.book_id,
+              b.trim_size, b.trim_width_mm, b.trim_height_mm, b.page_style,
+              b.page_effect, b.show_page_numbers, b.reader_default_mode,
               b.author_name, b.publisher_name, b.publication_year
        FROM books b
        WHERE b.slug = ? AND ${publicStatusFilter}
@@ -113,27 +134,53 @@ export class CatalogService {
         [bookId],
       ),
       this.db.query<Row[]>(
-        `SELECT c.category_id, c.name, c.slug
+        `SELECT c.category_id, c.parent_category_id, c.name, c.slug, c.description, c.icon,
+                g.name AS group_name, g.slug AS group_slug
          FROM categories c
+         LEFT JOIN categories g ON g.category_id = c.parent_category_id
          JOIN book_categories bc ON bc.category_id = c.category_id
-         WHERE bc.book_id = ?
-         ORDER BY bc.is_primary DESC, c.name`,
+         WHERE bc.book_id = ? AND c.is_active = 1
+         ORDER BY g.sort_order, c.sort_order, c.name`,
         [bookId],
       ),
     ]);
 
     delete book.book_id;
-    return { ...book, authors, categories };
+    return {
+      ...book,
+      layout: {
+        trimSize: book.trim_size ?? 'A5',
+        widthMm: Number(book.trim_width_mm ?? 148),
+        heightMm: Number(book.trim_height_mm ?? 210),
+        pageStyle: book.page_style ?? 'lines',
+        pageEffect: book.page_effect ?? 'paper',
+        showPageNumbers: Number(book.show_page_numbers ?? 1) === 1,
+        readerDefaultMode: book.reader_default_mode ?? 'page',
+      },
+      authors,
+      categories,
+    };
   }
 
   async listCategories() {
     const rows = await this.db.query<Row[]>(
-      `SELECT category_id, parent_category_id, name, slug, description, sort_order, is_active
+      `SELECT category_id, parent_category_id, name, slug, description, sort_order, is_active, icon
        FROM categories
        WHERE is_active = 1
        ORDER BY sort_order, name`,
     );
-    return { data: rows };
+    const groups = rows
+      .filter((row) => row.parent_category_id === null)
+      .map((group) => ({
+        ...group,
+        children: rows.filter((row) => row.parent_category_id === group.category_id),
+      }));
+    const leaves = rows.filter((row) => row.parent_category_id !== null);
+    return {
+      data: leaves,
+      groups,
+      ageRatings: ['all', '6+', '13+', '16+', '18+', '19+'],
+    };
   }
 
   async listAuthors() {

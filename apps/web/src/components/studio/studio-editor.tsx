@@ -15,6 +15,7 @@ import { ArrowLeftIcon, BookIcon, ChevronDownIcon, ClockIcon, CloseIcon } from '
 import { BookCover } from '@/components/books/book-cover';
 import { PdfExport } from '@/components/studio/pdf-export';
 import { RichTextEditor } from '@/components/studio/rich-text-editor';
+import { StudioQuickMenu } from '@/components/studio/studio-quick-menu';
 import {
   completeUpload,
   createChapter,
@@ -37,11 +38,27 @@ import {
   updateChapter,
   uploadChunk,
   updateStudioBook,
+  type BookLayout,
   type StudioBookDetail,
-  type StudioCategory,
+  type StudioCategoryGroup,
   type StudioChapter,
   type StudioVersion,
 } from '@/lib/api';
+import { CategoryPicker } from '@/components/categories/category-picker';
+import { BookPage } from '@/components/books/book-page';
+import { compressCoverImage } from '@/lib/cover-image';
+import {
+  DEFAULT_BOOK_LAYOUT,
+  PAGE_EFFECT_OPTIONS,
+  PAGE_STYLE_OPTIONS,
+  READER_MODE_OPTIONS,
+  TRIM_PRESETS,
+  estimateWordsPerPage,
+  layoutFromBook,
+  paginateHtml,
+  pageTextureStyle,
+  trimPreset,
+} from '@/lib/book-layout';
 import {
   countWords,
   moveItem,
@@ -57,12 +74,31 @@ const LANGUAGES = [
   { value: 'en', label: 'English' },
 ];
 
+type StudioStep = 'info' | 'design' | 'content' | 'preview' | 'publish';
+
+const STUDIO_STEPS: { id: StudioStep; label: string; hint: string }[] = [
+  { id: 'info', label: 'Thông tin', hint: 'Tên sách, tác giả, mô tả, danh mục' },
+  { id: 'design', label: 'Giao diện', hint: 'Bìa, kích thước, khung trang' },
+  { id: 'content', label: 'Nội dung', hint: 'Chương, mục và bản thảo' },
+  { id: 'preview', label: 'Xem trước', hint: 'Đọc như sách thật' },
+  { id: 'publish', label: 'Xuất bản', hint: 'Kiểm tra và phát hành' },
+];
+
+const AGE_RATINGS = [
+  { value: 'all', label: 'Mọi độ tuổi' },
+  { value: '6+', label: 'Từ 6 tuổi' },
+  { value: '13+', label: 'Từ 13 tuổi' },
+  { value: '16+', label: 'Từ 16 tuổi' },
+  { value: '18+', label: 'Từ 18 tuổi' },
+  { value: '19+', label: 'Từ 19 tuổi' },
+];
+
 type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
 
 const AUTOSAVE_DELAY_MS = 2000;
 
 const COVER_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-const MAX_COVER_BYTES = 2 * 1024 * 1024;
+const MAX_COVER_BYTES = 15 * 1024 * 1024;
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
@@ -71,7 +107,16 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
-type MetaDraft = { title: string; subtitle: string; description: string; language: string };
+type MetaDraft = {
+  title: string;
+  subtitle: string;
+  description: string;
+  language: string;
+  ageRating: string;
+  authorName: string;
+  publisherName: string;
+  publicationYear: string;
+};
 
 function toMetaDraft(book: StudioBookDetail): MetaDraft {
   return {
@@ -79,7 +124,19 @@ function toMetaDraft(book: StudioBookDetail): MetaDraft {
     subtitle: book.subtitle ?? '',
     description: book.description ?? '',
     language: book.language || 'vi',
+    ageRating: book.ageRating || 'all',
+    authorName: book.authorName ?? '',
+    publisherName: book.publisherName ?? '',
+    publicationYear: book.publicationYear ? String(book.publicationYear) : String(new Date().getFullYear()),
   };
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;');
 }
 
 function saveStateText(state: SaveState, savedAt: Date | null): string {
@@ -99,7 +156,21 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
   const [authRequired, setAuthRequired] = useState(false);
   const [loadError, setLoadError] = useState('');
 
-  const [meta, setMeta] = useState<MetaDraft>({ title: '', subtitle: '', description: '', language: 'vi' });
+  const [meta, setMeta] = useState<MetaDraft>({
+    title: '',
+    subtitle: '',
+    description: '',
+    language: 'vi',
+    ageRating: 'all',
+    authorName: '',
+    publisherName: '',
+    publicationYear: String(new Date().getFullYear()),
+  });
+  const [step, setStep] = useState<StudioStep>('info');
+  const [layout, setLayout] = useState<BookLayout>(DEFAULT_BOOK_LAYOUT);
+  const [layoutState, setLayoutState] = useState<SaveState>('idle');
+  const [layoutSavedAt, setLayoutSavedAt] = useState<Date | null>(null);
+  const [previewPage, setPreviewPage] = useState(0);
   const [metaState, setMetaState] = useState<SaveState>('idle');
   const [metaSavedAt, setMetaSavedAt] = useState<Date | null>(null);
 
@@ -120,7 +191,7 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
   const [confirmBookDelete, setConfirmBookDelete] = useState(false);
   const [versions, setVersions] = useState<StudioVersion[] | null>(null);
   const [versionsLoading, setVersionsLoading] = useState(false);
-  const [categoryOptions, setCategoryOptions] = useState<StudioCategory[]>([]);
+  const [categoryGroups, setCategoryGroups] = useState<StudioCategoryGroup[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<number[]>([]);
   const [tagsInput, setTagsInput] = useState('');
   const [taxonomySaving, setTaxonomySaving] = useState(false);
@@ -133,8 +204,11 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
   const applyBook = useCallback((next: StudioBookDetail) => {
     setBook(next);
     setMeta(toMetaDraft(next));
+    setLayout(layoutFromBook(next));
     setMetaState('idle');
+    setLayoutState('idle');
     setMetaSavedAt(null);
+    setLayoutSavedAt(null);
   }, []);
 
   const load = useCallback(async (): Promise<StudioBookDetail | null> => {
@@ -165,10 +239,10 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
     let active = true;
     listStudioCategories()
       .then((response) => {
-        if (active) setCategoryOptions(response.data);
+        if (active) setCategoryGroups(response.groups);
       })
       .catch(() => {
-        if (active) setCategoryOptions([]);
+        if (active) setCategoryGroups([]);
       });
     return () => {
       active = false;
@@ -208,7 +282,11 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
       meta.title !== saved.title ||
       meta.subtitle !== saved.subtitle ||
       meta.description !== saved.description ||
-      meta.language !== saved.language
+      meta.language !== saved.language ||
+      meta.ageRating !== saved.ageRating ||
+      meta.authorName !== saved.authorName ||
+      meta.publisherName !== saved.publisherName ||
+      meta.publicationYear !== saved.publicationYear
     );
   }, [book, meta]);
 
@@ -282,13 +360,14 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
       return;
     }
     if (file.size > MAX_COVER_BYTES) {
-      toast('Ảnh bìa tối đa 2 MiB.', 'error');
+      toast('Ảnh bìa gốc tối đa 15 MiB; ảnh sẽ được nén theo khung sách.', 'error');
       return;
     }
     setCoverBusy(true);
     try {
-      const init = await initUpload(file.name, file.type, file.size);
-      const buffer = await file.arrayBuffer();
+      const compressed = await compressCoverImage(file, layout.widthMm, layout.heightMm);
+      const init = await initUpload(compressed.name, compressed.type, compressed.size);
+      const buffer = await compressed.arrayBuffer();
       const chunkCount = Math.max(1, init.chunkCount);
       for (let index = 0; index < chunkCount; index += 1) {
         const slice = buffer.slice(index * init.chunkSize, Math.min(buffer.byteLength, (index + 1) * init.chunkSize));
@@ -328,6 +407,11 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
       toast(error, 'error');
       return;
     }
+    const year = Number(meta.publicationYear);
+    if (!Number.isInteger(year) || year < 1000 || year > 2200) {
+      toast('Năm xuất bản không hợp lệ.', 'error');
+      return;
+    }
     setMetaState('saving');
     try {
       const updated = await updateStudioBook(book.bookUuid, {
@@ -335,6 +419,10 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
         subtitle: meta.subtitle.trim(),
         description: meta.description,
         language: meta.language,
+        ageRating: meta.ageRating,
+        authorName: meta.authorName.trim(),
+        publisherName: meta.publisherName.trim(),
+        publicationYear: year,
       });
       applyBook(updated);
       setMetaState('saved');
@@ -343,6 +431,35 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
     } catch (error) {
       setMetaState('dirty');
       toast(error instanceof Error ? error.message : 'Không thể lưu thông tin sách.', 'error');
+    }
+  }
+
+  function updateLayout(patch: Partial<BookLayout>) {
+    setLayout((current) => ({ ...current, ...patch }));
+    setLayoutState('dirty');
+  }
+
+  async function saveLayout(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!book) return;
+    setLayoutState('saving');
+    try {
+      const updated = await updateStudioBook(book.bookUuid, {
+        trimSize: layout.trimSize,
+        trimWidthMm: layout.widthMm,
+        trimHeightMm: layout.heightMm,
+        pageStyle: layout.pageStyle,
+        pageEffect: layout.pageEffect,
+        showPageNumbers: layout.showPageNumbers,
+        readerDefaultMode: layout.readerDefaultMode,
+      });
+      applyBook(updated);
+      setLayoutState('saved');
+      setLayoutSavedAt(new Date());
+      toast('Đã lưu giao diện và khung trang.', 'success');
+    } catch (error) {
+      setLayoutState('dirty');
+      toast(error instanceof Error ? error.message : 'Không thể lưu giao diện sách.', 'error');
     }
   }
 
@@ -439,6 +556,30 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
       toast('Đã thêm chương mới.', 'success');
     } catch (error) {
       toast(error instanceof Error ? error.message : 'Không thể thêm chương.', 'error');
+    } finally {
+      setBusyAction('');
+    }
+  }
+
+  async function autoCreateChapters() {
+    if (!book) return;
+    if (chapters.length > 0 && !window.confirm('Sách đã có chương. Vẫn tạo thêm 5 chương tự động?')) return;
+    setBusyAction('auto-chapters');
+    try {
+      const start = chapters.length + 1;
+      let lastUuid = '';
+      for (let index = 0; index < 5; index += 1) {
+        const created = await createChapter(book.bookUuid, {
+          title: `Chương ${start + index}`,
+          content: '<p></p>',
+        });
+        lastUuid = created.chapterUuid;
+      }
+      await load();
+      if (lastUuid) setSelectedUuid(lastUuid);
+      toast('Đã tạo 5 chương tự động. Bạn có thể đổi tên và sắp xếp lại.', 'success');
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Không thể tạo chương tự động.', 'error');
     } finally {
       setBusyAction('');
     }
@@ -572,10 +713,6 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
 
   async function saveTaxonomy() {
     if (!book) return;
-    if (selectedCategories.length > 5) {
-      toast('Mỗi sách chỉ được chọn tối đa 5 danh mục.', 'error');
-      return;
-    }
     const tags = tagsInput
       .split(',')
       .map((tag) => tag.trim())
@@ -713,6 +850,23 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
     title: chapter.chapterUuid === selectedUuid ? chapterTitle : chapter.title,
     content: chapter.chapterUuid === selectedUuid ? chapterContent : chapter.content ?? '',
   }));
+  const wordsPerPage = estimateWordsPerPage(layout);
+  const previewPages = pdfChapters.flatMap((chapter) =>
+    paginateHtml(chapter.content || '<p></p>', wordsPerPage).map((html, index) => ({
+      chapterTitle: chapter.title,
+      html: index === 0 ? `<h2>${escapeHtml(chapter.title)}</h2>${html}` : html,
+      chapterUuid: chapter.chapterUuid,
+    })),
+  );
+  const safePreviewPage = Math.min(previewPage, Math.max(0, previewPages.length - 1));
+  const writingPageStyle = {
+    width: `min(100%, ${Math.round(Math.min(860, Math.max(360, layout.widthMm * 4.8)))}px)`,
+    minHeight: '68vh',
+    backgroundImage: pageTextureStyle(layout).backgroundImage,
+    backgroundSize: pageTextureStyle(layout).backgroundSize,
+    backgroundColor: '#fffdf8',
+    boxShadow: '0 18px 55px rgba(15,23,42,.16)',
+  } as const;
 
   return (
     <div className="container-site py-10">
@@ -760,6 +914,44 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
         </div>
       </div>
 
+      <nav
+        aria-label="Các bước viết sách"
+        className="sticky top-14 z-30 mt-5 overflow-x-auto rounded-2xl border border-border bg-card/95 p-1.5 shadow-soft backdrop-blur"
+      >
+        <div className="flex min-w-max gap-1">
+          {STUDIO_STEPS.map((item, index) => {
+            const active = step === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setStep(item.id)}
+                aria-current={active ? 'step' : undefined}
+                className={cn(
+                  'focus-ring min-w-36 rounded-xl px-3 py-2 text-left transition-colors',
+                  active ? 'bg-primary text-primary-foreground' : 'text-foreground hover:bg-surface',
+                )}
+              >
+                <span className="flex items-center gap-2 text-xs font-semibold leading-normal">
+                  <span
+                    className={cn(
+                      'grid h-5 w-5 place-items-center rounded-full text-[10px]',
+                      active ? 'bg-white/20' : 'bg-primary/10 text-primary',
+                    )}
+                  >
+                    {index + 1}
+                  </span>
+                  {item.label}
+                </span>
+                <span className={cn('mt-0.5 block text-[10px] leading-normal', active ? 'text-primary-foreground/75' : 'text-muted-foreground')}>
+                  {item.hint}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+
       {chapters.length > 0 ? (
         <div className="mt-4 flex justify-end">
           <PdfExport
@@ -776,6 +968,7 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="space-y-6">
+          {step === 'info' ? (
           <Card className="p-6">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="font-serif text-xl text-foreground">Thông tin sách</h2>
@@ -808,6 +1001,39 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
                   onChange={(event) => setMeta((current) => ({ ...current, subtitle: event.target.value }))}
                 />
               </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <Label htmlFor="studio-author">Tác giả</Label>
+                  <Input
+                    id="studio-author"
+                    value={meta.authorName}
+                    maxLength={255}
+                    placeholder="Tên tác giả trên bìa và catalog"
+                    onChange={(event) => setMeta((current) => ({ ...current, authorName: event.target.value }))}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="studio-publisher">Nhà xuất bản</Label>
+                  <Input
+                    id="studio-publisher"
+                    value={meta.publisherName}
+                    maxLength={255}
+                    placeholder="Không bắt buộc"
+                    onChange={(event) => setMeta((current) => ({ ...current, publisherName: event.target.value }))}
+                  />
+                </div>
+              </div>
+              <div>
+                <Label htmlFor="studio-publication-year">Năm xuất bản</Label>
+                <Input
+                  id="studio-publication-year"
+                  type="number"
+                  min="1000"
+                  max="2200"
+                  value={meta.publicationYear}
+                  onChange={(event) => setMeta((current) => ({ ...current, publicationYear: event.target.value }))}
+                />
+              </div>
               <div>
                 <Label htmlFor="studio-language">Ngôn ngữ</Label>
                 <Select
@@ -818,6 +1044,22 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
                   {LANGUAGES.map((language) => (
                     <option key={language.value} value={language.value}>
                       {language.label}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="studio-age-rating">Độ tuổi phù hợp</Label>
+                <Select
+                  id="studio-age-rating"
+                  value={meta.ageRating}
+                  onChange={(event) =>
+                    setMeta((current) => ({ ...current, ageRating: event.target.value }))
+                  }
+                >
+                  {AGE_RATINGS.map((rating) => (
+                    <option key={rating.value} value={rating.value}>
+                      {rating.label}
                     </option>
                   ))}
                 </Select>
@@ -836,11 +1078,14 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
               </Button>
             </form>
           </Card>
+          ) : null}
 
+          {step === 'design' ? (
+          <>
           <Card className="p-6">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="font-serif text-xl text-foreground">Ảnh bìa</h2>
-              <span className="text-xs text-muted-foreground">JPEG/PNG/WebP/GIF · tối đa 2 MiB</span>
+              <span className="text-xs text-muted-foreground">JPEG/PNG/WebP/GIF · tự nén theo khung sách</span>
             </div>
             <div className="mt-4 flex flex-wrap items-center gap-4">
               <div className="w-24 shrink-0 overflow-hidden rounded-xl border border-border">
@@ -879,51 +1124,169 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
               </div>
             </div>
             <p className="mt-3 text-xs text-muted-foreground">
-              Ảnh bìa chỉ hiển thị công khai khi sách đã xuất bản.
+              Ảnh bìa được nén/cắt theo đúng tỉ lệ khung sách và chỉ hiển thị công khai khi sách đã xuất bản.
             </p>
           </Card>
 
           <Card className="p-6">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="font-serif text-xl text-foreground">Danh mục &amp; nhãn</h2>
-              <span className="text-xs text-muted-foreground">
-                {selectedCategories.length}/5 danh mục
+              <div>
+                <h2 className="font-serif text-xl text-foreground">Khung trang &amp; hiệu ứng</h2>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Chọn kích thước, nền trang và cách người đọc mở sách.
+                </p>
+              </div>
+              <span className={cn('text-xs', layoutState === 'dirty' ? 'text-accent-foreground' : 'text-muted-foreground')}>
+                {saveStateText(layoutState, layoutSavedAt)}
               </span>
             </div>
-            {categoryOptions.length === 0 ? (
+            <form onSubmit={saveLayout} className="mt-4 space-y-4">
+              <div>
+                <Label htmlFor="studio-trim-size">Kích thước sách</Label>
+                <Select
+                  id="studio-trim-size"
+                  value={layout.trimSize}
+                  onChange={(event) => {
+                    const preset = trimPreset(event.target.value);
+                    updateLayout({
+                      trimSize: event.target.value,
+                      widthMm: preset.widthMm,
+                      heightMm: preset.heightMm,
+                    });
+                  }}
+                >
+                  {TRIM_PRESETS.map((preset) => (
+                    <option key={preset.value} value={preset.value}>{preset.label}</option>
+                  ))}
+                </Select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label htmlFor="studio-width-cm">Rộng (cm)</Label>
+                  <Input
+                    id="studio-width-cm"
+                    type="number"
+                    min="5"
+                    max="50"
+                    step="0.1"
+                    value={(layout.widthMm / 10).toFixed(1)}
+                    onChange={(event) => updateLayout({ trimSize: 'custom', widthMm: Number(event.target.value) * 10 })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="studio-height-cm">Cao (cm)</Label>
+                  <Input
+                    id="studio-height-cm"
+                    type="number"
+                    min="5"
+                    max="50"
+                    step="0.1"
+                    value={(layout.heightMm / 10).toFixed(1)}
+                    onChange={(event) => updateLayout({ trimSize: 'custom', heightMm: Number(event.target.value) * 10 })}
+                  />
+                </div>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <Label htmlFor="studio-page-style">Nền trang viết</Label>
+                  <Select
+                    id="studio-page-style"
+                    value={layout.pageStyle}
+                    onChange={(event) => updateLayout({ pageStyle: event.target.value as BookLayout['pageStyle'] })}
+                  >
+                    {PAGE_STYLE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="studio-page-effect">Hiệu ứng mở sách</Label>
+                  <Select
+                    id="studio-page-effect"
+                    value={layout.pageEffect}
+                    onChange={(event) => updateLayout({ pageEffect: event.target.value as BookLayout['pageEffect'] })}
+                  >
+                    {PAGE_EFFECT_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </Select>
+                </div>
+              </div>
+              <div>
+                <Label htmlFor="studio-reader-mode">Chế độ đọc mặc định</Label>
+                <Select
+                  id="studio-reader-mode"
+                  value={layout.readerDefaultMode}
+                  onChange={(event) => updateLayout({ readerDefaultMode: event.target.value as BookLayout['readerDefaultMode'] })}
+                >
+                  {READER_MODE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </Select>
+              </div>
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+                <input
+                  type="checkbox"
+                  checked={layout.showPageNumbers}
+                  onChange={(event) => updateLayout({ showPageNumbers: event.target.checked })}
+                  className="h-4 w-4 accent-[var(--primary)]"
+                />
+                Đánh số trang ở cuối mỗi trang
+              </label>
+              <div className="rounded-xl border border-border bg-surface/30 p-3">
+                <BookPage layout={layout} pageNumber={12} totalPages={120} maxWidth={420} className="text-[11px]">
+                  <p className="font-serif text-base font-semibold">Chương 1 · Khởi đầu</p>
+                  <p className="mt-2 text-[11px] leading-6 text-[#4f493f]">
+                    Đây là bản xem nhanh khung trang. Nội dung dài sẽ được chia trang tự động để không tràn khung.
+                  </p>
+                </BookPage>
+              </div>
+              <Button type="submit" disabled={layoutState === 'saving' || layoutState !== 'dirty'}>
+                {layoutState === 'saving' ? 'Đang lưu…' : 'Lưu giao diện'}
+              </Button>
+            </form>
+          </Card>
+          </>
+          ) : null}
+
+          {step === 'info' ? (
+          <Card className="p-6">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="font-serif text-xl text-foreground">Danh mục &amp; nhãn</h2>
+              <span className="text-xs text-muted-foreground">
+                {selectedCategories.length} thể loại
+              </span>
+            </div>
+            {categoryGroups.length === 0 ? (
               <p className="mt-3 text-sm text-muted-foreground">
                 Hệ thống chưa có danh mục nào được kích hoạt.
               </p>
             ) : (
-              <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                {categoryOptions.map((category) => {
-                  const checked = selectedCategories.includes(category.categoryId);
-                  return (
-                    <label
-                      key={category.categoryId}
-                      className={cn(
-                        'flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm transition-colors',
-                        checked ? 'border-primary/50 bg-primary/5' : 'border-border hover:bg-surface/60',
-                      )}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() =>
-                          setSelectedCategories((current) =>
-                            checked
-                              ? current.filter((id) => id !== category.categoryId)
-                              : current.length >= 5
-                                ? current
-                                : [...current, category.categoryId],
-                          )
-                        }
-                        className="h-4 w-4 accent-[rgb(var(--primary))]"
-                      />
-                      <span className="text-foreground">{category.name}</span>
-                    </label>
-                  );
-                })}
+              <div className="mt-3">
+                <CategoryPicker
+                  idPrefix="studio-category"
+                  groups={categoryGroups.map((group) => ({
+                    id: group.categoryId,
+                    name: group.name,
+                    slug: group.slug,
+                    description: group.description,
+                    icon: group.icon,
+                    children: group.children.map((child) => ({
+                      id: child.categoryId,
+                      name: child.name,
+                      slug: child.slug,
+                      description: child.description,
+                      icon: child.icon,
+                    })),
+                  }))}
+                  selected={selectedCategories.map(String)}
+                  valueKey="id"
+                  onChange={(values) =>
+                    setSelectedCategories(
+                      values.map((value) => Number.parseInt(value, 10)).filter((value) => value > 0),
+                    )
+                  }
+                />
               </div>
             )}
             <div className="mt-4">
@@ -945,12 +1308,27 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
               {taxonomySaving ? 'Đang lưu…' : 'Lưu danh mục & nhãn'}
             </Button>
           </Card>
+          ) : null}
 
-
+          {step === 'content' ? (
           <Card className="p-6">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="font-serif text-xl text-foreground">Chương</h2>
               <span className="text-xs text-muted-foreground">{chapters.length} chương</span>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={busyAction === 'auto-chapters'}
+                onClick={() => void autoCreateChapters()}
+              >
+                {busyAction === 'auto-chapters' ? 'Đang tạo…' : 'Hệ thống tự tạo 5 chương'}
+              </Button>
+              <span className="self-center text-[11px] text-muted-foreground">
+                Hoặc tự đặt tên chương bằng ô bên dưới.
+              </span>
             </div>
 
             {chapters.length === 0 ? (
@@ -1061,7 +1439,13 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
                       setChapterContent(content);
                     }}
                     placeholder="Bắt đầu viết nội dung chương…"
+                    pageStyle={writingPageStyle}
+                    pageClassName="font-serif text-[#29251f]"
                   />
+                  <p className="mt-2 text-center text-[11px] text-muted-foreground">
+                    Khung {layout.widthMm / 10} × {layout.heightMm / 10} cm · trang ước lượng{' '}
+                    {Math.max(1, Math.ceil(countWords(chapterContent) / wordsPerPage))}
+                  </p>
                 </div>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-xs text-muted-foreground">
@@ -1076,6 +1460,77 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
               <p className="mt-4 text-sm text-muted-foreground">Chọn một chương để chỉnh sửa nội dung.</p>
             )}
           </Card>
+          ) : null}
+
+          {step === 'preview' ? (
+            <Card className="p-6">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h2 className="font-serif text-xl text-foreground">Xem trước như sách thật</h2>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {layout.widthMm / 10} × {layout.heightMm / 10} cm · {previewPages.length} trang ước lượng
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Button type="button" variant="outline" size="sm" disabled={safePreviewPage <= 0} onClick={() => setPreviewPage((value) => Math.max(0, value - 1))}>
+                    Trang trước
+                  </Button>
+                  <span>{previewPages.length ? safePreviewPage + 1 : 0} / {previewPages.length}</span>
+                  <Button type="button" variant="outline" size="sm" disabled={safePreviewPage >= previewPages.length - 1} onClick={() => setPreviewPage((value) => Math.min(previewPages.length - 1, value + 1))}>
+                    Trang sau
+                  </Button>
+                </div>
+              </div>
+              {previewPages.length === 0 ? (
+                <p className="mt-6 rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
+                  Thêm chương và nội dung để xem trước.
+                </p>
+              ) : (
+                <div className="mt-5 bg-[#e9e2d5] px-3 py-6">
+                  <BookPage
+                    layout={layout}
+                    pageNumber={safePreviewPage + 1}
+                    totalPages={previewPages.length}
+                    maxWidth={820}
+                    animate
+                  >
+                    <div
+                      className="reader-rich-content"
+                      dangerouslySetInnerHTML={{ __html: previewPages[safePreviewPage]?.html ?? '' }}
+                    />
+                  </BookPage>
+                </div>
+              )}
+            </Card>
+          ) : null}
+
+          {step === 'publish' ? (
+            <Card className="p-6">
+              <h2 className="font-serif text-xl text-foreground">Sẵn sàng xuất bản</h2>
+              <div className="mt-4 space-y-2 text-sm">
+                {[
+                  { ok: meta.title.trim().length >= 2, label: 'Tên sách hợp lệ' },
+                  { ok: Boolean(meta.authorName.trim()), label: 'Đã có tên tác giả' },
+                  { ok: selectedCategories.length > 0, label: 'Đã chọn ít nhất một thể loại' },
+                  { ok: chapters.length > 0, label: 'Đã có ít nhất một chương' },
+                  { ok: totalWords > 0, label: 'Chương đã có nội dung' },
+                  { ok: Boolean(book.coverStorageKey), label: 'Đã có ảnh bìa' },
+                ].map((item) => (
+                  <p key={item.label} className={item.ok ? 'text-primary' : 'text-muted-foreground'}>
+                    {item.ok ? '✓' : '○'} {item.label}
+                  </p>
+                ))}
+              </div>
+              <div className="mt-5 flex flex-wrap gap-2">
+                <Button type="button" onClick={onPublish} disabled={busyAction === 'publish'}>
+                  {busyAction === 'publish' ? 'Đang xuất bản…' : published ? 'Xuất bản lại' : 'Xuất bản sách'}
+                </Button>
+                <Button type="button" variant="outline" onClick={() => setStep('preview')}>
+                  Xem trước lần cuối
+                </Button>
+              </div>
+            </Card>
+          ) : null}
         </div>
 
 
@@ -1156,6 +1611,12 @@ export function StudioEditor({ bookUuid }: { bookUuid: string }) {
           </Card>
         </aside>
       </div>
+      <StudioQuickMenu
+        steps={STUDIO_STEPS.map((item) => ({ id: item.id, label: item.label }))}
+        active={step}
+        onStep={(id) => setStep(id as StudioStep)}
+        onPublish={onPublish}
+      />
       {publishOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="presentation" onMouseDown={(event) => {
           if (event.target === event.currentTarget) setPublishOpen(false);

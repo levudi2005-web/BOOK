@@ -13,6 +13,7 @@ import { DocumentsModule } from './documents/documents.module.js';
 import { SocialModule } from './social/social.module.js';
 import { ProfileModule } from './profile/profile.module.js';
 import { AccountModule } from './account/account.module.js';
+import { FeedbackModule } from './feedback/feedback.module.js';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { AccountModule } from './account/account.module.js';
     SocialModule,
     ProfileModule,
     AccountModule,
+    FeedbackModule,
   ],
   controllers: [HealthController, CatalogController],
 })

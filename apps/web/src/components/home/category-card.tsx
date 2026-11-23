@@ -1,8 +1,9 @@
 import Link from 'next/link';
 import { Card } from '@/components/ui/card';
 import { ChevronRightIcon } from '@/components/icons';
+import { CategoryIcon } from '@/components/categories/category-icon';
 
-const tones = ['#173F35', '#315C4C', '#6B4F2A', '#4A3B52', '#7A4A3A', '#3A4A5C', '#2F5C54', '#5C523A'];
+const tones = ['#4CCFD0', '#8DE8E8', '#245B5C', '#6FDEDE', '#3B7C7D', '#A5F0F0'];
 
 function toneFor(slug: string): string {
   let hash = 0;
@@ -16,31 +17,37 @@ export type CategoryCardData = {
   name: string;
   slug: string;
   description: string | null;
+  icon?: string | null;
+  childrenCount?: number;
+  href?: string;
 };
 
 export function CategoryCard({ category }: { category: CategoryCardData }) {
   const tone = toneFor(category.slug);
   return (
-    <Link href={`/discover?category=${category.slug}`} className="focus-ring group block rounded-2xl">
-      <Card className="h-full overflow-hidden p-0 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lift">
-        <div
-          className="relative h-24 w-full overflow-hidden"
-          style={{ background: `linear-gradient(120deg, ${tone}, ${tone}cc)` }}
+    <Link
+      href={category.href ?? `/discover?category=${category.slug}`}
+      className="focus-ring group block"
+    >
+      <Card className="flex h-full items-center gap-2.5 p-2.5 transition-colors group-hover:border-primary/50 group-hover:bg-surface/50">
+        <span
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-white"
+          style={{ background: tone }}
         >
-          <div className="absolute -right-4 -top-6 h-24 w-24 rounded-full opacity-30" style={{ backgroundColor: tone }} />
-          <span className="absolute bottom-3 left-4 text-xs font-medium uppercase tracking-[0.2em] text-white/80">
-            Thể loại
-          </span>
-        </div>
-        <div className="p-5">
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="font-serif text-lg text-foreground">{category.name}</h3>
-            <ChevronRightIcon className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-          </div>
-          <p className="mt-1.5 line-clamp-2 text-sm leading-relaxed text-muted-foreground">
+          <CategoryIcon icon={category.icon} className="h-4 w-4" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[13px] font-semibold text-foreground">{category.name}</span>
+          <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
             {category.description ?? 'Chưa có mô tả.'}
-          </p>
-        </div>
+          </span>
+          {category.childrenCount !== undefined ? (
+            <span className="mt-0.5 block text-[10px] font-medium text-primary">
+              {category.childrenCount} thể loại
+            </span>
+          ) : null}
+        </span>
+        <ChevronRightIcon className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
       </Card>
     </Link>
   );

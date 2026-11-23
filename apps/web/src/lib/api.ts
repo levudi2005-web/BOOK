@@ -54,6 +54,16 @@ function parseJsonBody(text: string, response: Response, url: string): unknown {
   }
 }
 
+export type BookLayout = {
+  trimSize: string;
+  widthMm: number;
+  heightMm: number;
+  pageStyle: 'blank' | 'lines' | 'grid';
+  pageEffect: 'paper' | 'flip' | 'web';
+  showPageNumbers: boolean;
+  readerDefaultMode: 'page' | 'flip' | 'scroll';
+};
+
 export type ApiBook = {
   book_uuid: string;
   slug: string;
@@ -73,6 +83,7 @@ export type ApiBook = {
   view_count: number;
   download_count: number;
   published_at: string | null;
+  age_rating: string;
   author_name: string | null;
   publisher_name: string | null;
   publication_year: number | null;
@@ -84,8 +95,21 @@ export type ApiCategory = {
   name: string;
   slug: string;
   description: string | null;
+  icon?: string | null;
   sort_order: number;
   is_active: number;
+};
+
+export type CategoryGroup = {
+  category_id: number;
+  parent_category_id: null;
+  name: string;
+  slug: string;
+  description: string | null;
+  icon?: string | null;
+  sort_order: number;
+  is_active: number;
+  children: ApiCategory[];
 };
 
 export type ApiAuthor = {
@@ -109,13 +133,21 @@ export type BookListResponse = {
 };
 
 export type BookDetail = ApiBook & {
+  layout: BookLayout;
   authors: Pick<ApiAuthor, 'author_id' | 'author_uuid' | 'name' | 'slug'>[];
-  categories: Pick<ApiCategory, 'category_id' | 'name' | 'slug'>[];
+  categories: Array<
+    Pick<ApiCategory, 'category_id' | 'parent_category_id' | 'name' | 'slug' | 'description' | 'icon'> & {
+      group_name: string | null;
+      group_slug: string | null;
+    }
+  >;
 };
 
 export type BookQuery = {
   q?: string;
   category?: string;
+  categories?: string;
+  group?: string;
   author?: string;
   publisher?: string;
   year?: string;
@@ -137,6 +169,8 @@ export async function fetchBooks(query: BookQuery = {}): Promise<BookListRespons
   const params = new URLSearchParams();
   if (query.q) params.set('q', query.q);
   if (query.category) params.set('category', query.category);
+  if (query.categories) params.set('categories', query.categories);
+  if (query.group) params.set('group', query.group);
   if (query.author) params.set('author', query.author);
   if (query.publisher) params.set('publisher', query.publisher);
   if (query.year) params.set('year', query.year);
@@ -163,8 +197,12 @@ export async function fetchBookChapters(slug: string): Promise<{ data: Chapter[]
   return get<{ data: Chapter[] }>(`/books/${encodeURIComponent(slug)}/chapters`);
 }
 
-export async function fetchCategories(): Promise<{ data: ApiCategory[] }> {
-  return get<{ data: ApiCategory[] }>('/categories');
+export async function fetchCategories(): Promise<{
+  data: ApiCategory[];
+  groups: CategoryGroup[];
+  ageRatings: string[];
+}> {
+  return get<{ data: ApiCategory[]; groups: CategoryGroup[]; ageRatings: string[] }>('/categories');
 }
 
 export async function fetchAuthors(): Promise<{ data: ApiAuthor[] }> {
@@ -364,6 +402,8 @@ export type StudioBook = {
   status: string;
   visibility: string;
   publicationScope: string;
+  ageRating: string;
+  layout: BookLayout;
   authorName: string | null;
   publisherName: string | null;
   publicationYear: number | null;
@@ -393,7 +433,23 @@ export type StudioCategory = {
   categoryId: number;
   name: string;
   slug: string;
+  description?: string | null;
+  icon?: string | null;
   parentCategoryId?: number | null;
+  sortOrder?: number;
+  groupName?: string | null;
+  groupSlug?: string | null;
+};
+
+export type StudioCategoryGroup = {
+  categoryId: number;
+  name: string;
+  slug: string;
+  description: string | null;
+  icon: string | null;
+  parentCategoryId: null;
+  sortOrder: number;
+  children: StudioCategory[];
 };
 
 export type StudioVersionDetail = {
@@ -416,6 +472,14 @@ export type StudioBookInput = {
   authorName?: string;
   publisherName?: string;
   publicationYear?: number;
+  ageRating?: string;
+  trimSize?: string;
+  trimWidthMm?: number;
+  trimHeightMm?: number;
+  pageStyle?: 'blank' | 'lines' | 'grid';
+  pageEffect?: 'paper' | 'flip' | 'web';
+  showPageNumbers?: boolean;
+  readerDefaultMode?: 'page' | 'flip' | 'scroll';
 };
 
 export async function listMyBooks(): Promise<{ data: StudioBook[] }> {
@@ -503,7 +567,10 @@ export async function unpublishBook(bookUuid: string): Promise<StudioBookDetail>
   return request(`/studio/books/${encodeURIComponent(bookUuid)}/unpublish`, { method: 'POST' });
 }
 
-export async function listStudioCategories(): Promise<{ data: StudioCategory[] }> {
+export async function listStudioCategories(): Promise<{
+  data: StudioCategory[];
+  groups: StudioCategoryGroup[];
+}> {
   return request('/studio/categories');
 }
 
@@ -710,6 +777,51 @@ export async function resetPasswordWithRecoveryKey(
 }
 
 // ---------------------------------------------------------------------------
+// Feedback / report / idea (one-way to admin)
+// ---------------------------------------------------------------------------
+
+export type UserFeedback = {
+  feedback_id?: number;
+  feedback_uuid: string;
+  user_id: number | null;
+  username?: string | null;
+  kind: 'feedback' | 'report' | 'idea';
+  subject: string;
+  message: string;
+  page_path: string | null;
+  status: 'new' | 'read' | 'resolved';
+  admin_note: string | null;
+  created_at: string;
+};
+
+export async function createFeedback(input: {
+  kind?: 'feedback' | 'report' | 'idea';
+  subject: string;
+  message: string;
+  pagePath?: string;
+}): Promise<{ feedbackUuid: string; status: string }> {
+  return request('/feedback', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export async function listMyFeedback(): Promise<{ data: UserFeedback[] }> {
+  return request('/feedback/mine');
+}
+
+export async function adminFeedback(status?: string): Promise<{ data: UserFeedback[] }> {
+  return adminRequest(`/admin/feedback${status ? `?status=${encodeURIComponent(status)}` : ''}`);
+}
+
+export async function adminUpdateFeedback(
+  feedbackId: number,
+  input: { status?: string; adminNote?: string },
+): Promise<{ success: boolean }> {
+  return adminRequest(`/admin/feedback/${feedbackId}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Admin
 // ---------------------------------------------------------------------------
 
@@ -738,6 +850,54 @@ export async function adminBooks(page = 1, limit = 20): Promise<{ data: Array<Re
   return adminRequest(`/admin/books?page=${page}&limit=${limit}`);
 }
 
+export type AdminCategory = {
+  category_id: number;
+  parent_category_id: number | null;
+  name: string;
+  slug: string;
+  description: string | null;
+  icon: string | null;
+  sort_order: number;
+  is_active: number;
+  group_name?: string | null;
+  usage_count?: number;
+  child_count?: number;
+};
+
+export type AdminCategoryGroup = AdminCategory & { children: AdminCategory[] };
+
+export type AdminCategoryInput = {
+  parentCategoryId?: number | null;
+  name: string;
+  slug?: string;
+  description?: string | null;
+  icon?: string | null;
+  sortOrder?: number;
+  isActive?: boolean;
+};
+
+export async function adminCategories(): Promise<{ data: AdminCategory[]; groups: AdminCategoryGroup[] }> {
+  return adminRequest('/admin/categories');
+}
+
+export async function adminCreateCategory(input: AdminCategoryInput): Promise<{ data: AdminCategory }> {
+  return adminRequest('/admin/categories', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export async function adminUpdateCategory(
+  categoryId: number,
+  input: Partial<AdminCategoryInput>,
+): Promise<{ data: AdminCategory }> {
+  return adminRequest(`/admin/categories/${categoryId}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function adminDeleteCategory(categoryId: number): Promise<{ success: boolean }> {
+  return adminRequest(`/admin/categories/${categoryId}`, { method: 'DELETE' });
+}
+
 // ---------------------------------------------------------------------------
 // Profile (session-scoped)
 // ---------------------------------------------------------------------------
@@ -751,7 +911,13 @@ export type MyProfile = {
   createdAt: string;
   lastLoginAt: string | null;
   profile: { displayName: string; bio: string; websiteUrl: string; isPublic: boolean };
-  stats: { library: number; reading: number; books: number; comments: number };
+  stats: {
+    library: number;
+    reading: number;
+    books: number;
+    comments: number;
+    readingMinutes: number;
+  };
 };
 
 export async function getMyProfile(): Promise<MyProfile> {
@@ -765,6 +931,19 @@ export async function updateMyProfile(input: {
   isPublic?: boolean;
 }): Promise<MyProfile> {
   return request('/me', { method: 'PATCH', body: JSON.stringify(input) });
+}
+
+export async function getReadingPreferences(): Promise<{ categorySlugs: string[] }> {
+  return request('/me/preferences');
+}
+
+export async function updateReadingPreferences(
+  categorySlugs: string[],
+): Promise<{ categorySlugs: string[] }> {
+  return request('/me/preferences', {
+    method: 'PUT',
+    body: JSON.stringify({ categorySlugs }),
+  });
 }
 
 export async function searchBooks(q: string): Promise<{ hits: Array<Record<string, unknown>>; estimatedTotalHits: number }> {
@@ -786,6 +965,10 @@ export type LibraryItem = {
   book_status?: string | null;
   status: string;
   isFavorite: boolean;
+  progress_percent?: number | string;
+  seconds_read?: number | string;
+  page_number?: number | null;
+  total_pages?: number | null;
   added_at: string;
   last_opened_at: string | null;
   finished_at: string | null;
@@ -811,11 +994,21 @@ export async function getProgress(slug: string): Promise<{
   percentComplete: number;
   isCompleted: boolean;
   chapterUuid: string | null;
+  secondsRead?: number;
 }> {
   return request(`/progress/${slug}`);
 }
 
-export async function saveProgress(slug: string, input: { percentComplete?: number; isCompleted?: boolean; chapterId?: number; chapterUuid?: string }): Promise<{ percentComplete: number; isCompleted: boolean }> {
+export async function saveProgress(
+  slug: string,
+  input: {
+    percentComplete?: number;
+    isCompleted?: boolean;
+    chapterId?: number;
+    chapterUuid?: string;
+    secondsRead?: number;
+  },
+): Promise<{ percentComplete: number; isCompleted: boolean; secondsRead?: number }> {
   return request(`/progress/${slug}`, { method: 'PUT', body: JSON.stringify(input) });
 }
 

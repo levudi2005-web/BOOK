@@ -38,14 +38,21 @@ export class ProfileService {
     }
     const row = rows[0];
     const [counts] = await this.db.query<
-      { library_count: number; reading_count: number; book_count: number; comment_count: number }[]
+      {
+        library_count: number;
+        reading_count: number;
+        book_count: number;
+        comment_count: number;
+        reading_seconds: number | string;
+      }[]
     >(
       `SELECT
          (SELECT COUNT(*) FROM user_library WHERE user_id = ? AND removed_at IS NULL) AS library_count,
          (SELECT COUNT(*) FROM reading_progress WHERE user_id = ?) AS reading_count,
          (SELECT COUNT(*) FROM books WHERE created_by_user_id = ? AND deleted_at IS NULL) AS book_count,
-         (SELECT COUNT(*) FROM comments WHERE user_id = ? AND deleted_at IS NULL) AS comment_count`,
-      [userId, userId, userId, userId],
+         (SELECT COUNT(*) FROM comments WHERE user_id = ? AND deleted_at IS NULL) AS comment_count,
+         (SELECT COALESCE(SUM(seconds_read), 0) FROM reading_progress WHERE user_id = ?) AS reading_seconds`,
+      [userId, userId, userId, userId, userId],
     );
 
     return {
@@ -67,6 +74,7 @@ export class ProfileService {
         reading: Number(counts?.reading_count ?? 0),
         books: Number(counts?.book_count ?? 0),
         comments: Number(counts?.comment_count ?? 0),
+        readingMinutes: Math.floor(Number(counts?.reading_seconds ?? 0) / 60),
       },
     };
   }
@@ -96,5 +104,55 @@ export class ProfileService {
       [userId, displayName, bio, websiteUrl || null, input.isPublic === false ? 0 : 1],
     );
     return this.getMe(userId);
+  }
+
+  /**
+   * Sở thích đọc lưu trong `user_settings.preferences` dưới dạng JSON.
+   * Chỉ lưu slug của thể loại con đang active, không lưu id dễ lệch giữa môi trường.
+   */
+  async getPreferences(userId: number) {
+    const rows = await this.db.query<{ preferences: unknown }[]>(
+      `SELECT preferences FROM user_settings WHERE user_id = ? LIMIT 1`,
+      [userId],
+    );
+    let parsed: unknown = rows[0]?.preferences ?? null;
+    if (typeof parsed === 'string') {
+      try {
+        parsed = JSON.parse(parsed) as unknown;
+      } catch {
+        parsed = null;
+      }
+    }
+    const categorySlugs =
+      parsed && typeof parsed === 'object' && Array.isArray((parsed as { categorySlugs?: unknown }).categorySlugs)
+        ? ((parsed as { categorySlugs: unknown[] }).categorySlugs.filter(
+            (value): value is string => typeof value === 'string',
+          ))
+        : [];
+    return { categorySlugs };
+  }
+
+  async updatePreferences(userId: number, input: string[]) {
+    const categorySlugs = [...new Set(input.filter((slug) => typeof slug === 'string' && slug.trim()))]
+      .map((slug) => slug.trim())
+      .slice(0, 64);
+    if (categorySlugs.length > 0) {
+      const placeholders = categorySlugs.map(() => '?').join(',');
+      const existing = await this.db.query<{ slug: string }[]>(
+        `SELECT slug FROM categories
+         WHERE is_active = 1 AND parent_category_id IS NOT NULL AND slug IN (${placeholders})`,
+        categorySlugs,
+      );
+      if (existing.length !== categorySlugs.length) {
+        throw new BadRequestException('Sở thích chứa thể loại không hợp lệ.');
+      }
+    }
+    await this.db.query(
+      `INSERT INTO user_settings (user_id, preferences)
+       VALUES (?, ?)
+       ON DUPLICATE KEY UPDATE preferences = VALUES(preferences)`,
+      [userId, JSON.stringify({ categorySlugs })],
+    );
+    return { categorySlugs };
   }
 }

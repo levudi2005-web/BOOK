@@ -2,34 +2,29 @@ import Link from 'next/link';
 import { Hero } from '@/components/home/hero';
 import { CategoryGrid } from '@/components/home/category-grid';
 import { FeaturedBooks } from '@/components/home/featured-books';
+import { HomeQuickMenu } from '@/components/home/home-quick-menu';
 import { SectionHeading } from '@/components/ui/section-heading';
-import { EmptyState } from '@/components/ui/empty-state';
 import { Card } from '@/components/ui/card';
-import {
-  BookOpenIcon,
-  LibraryIcon,
-  SparkleIcon,
-  UserIcon,
-} from '@/components/icons';
+import { BookIcon, BookOpenIcon, LibraryIcon, MoreHorizontalIcon, SparkleIcon } from '@/components/icons';
 
-const capabilities = [
+const quickActions = [
   {
-    icon: BookOpenIcon,
-    title: 'Viết & sáng tạo',
-    description:
-      'Không gian viết có cấu trúc, dàn trang và thiết kế bìa cho tác phẩm của bạn.',
-  },
-  {
-    icon: LibraryIcon,
-    title: 'Đọc & lưu trữ',
-    description:
-      'Thư viện cá nhân với tiến độ đọc, bookmark và danh sách lưu trữ riêng tư.',
-  },
-  {
+    href: '/write',
     icon: SparkleIcon,
-    title: 'Xuất bản & chia sẻ',
-    description:
-      'Chuẩn bị bản thảo để xuất bản và chia sẻ trong cộng đồng đọc sách.',
+    title: 'Viết bản thảo mới',
+    description: 'Tạo sách, chương và xuất bản.',
+  },
+  {
+    href: '/storage',
+    icon: LibraryIcon,
+    title: 'Bộ nhớ cá nhân',
+    description: 'Tải lên và quản lý tệp.',
+  },
+  {
+    href: '/office/writer',
+    icon: BookIcon,
+    title: 'Office Writer',
+    description: 'Soạn tài liệu có định dạng.',
   },
 ];
 
@@ -38,95 +33,92 @@ export default function HomePage() {
     <>
       <Hero />
 
-      {/* Featured books */}
-      <section className="container-site py-16">
+      <section className="container-site py-6 sm:py-8">
         <SectionHeading
-          eyebrow="Tuyển chọn"
-          title="Sách nổi bật"
-          description="Những đầu sách được tuyển chọn và giới thiệu trong thư viện."
+          eyebrow="Dành cho bạn"
+          title="Sách mới cập nhật"
+          description="Những đầu sách vừa được chia sẻ trong thư viện."
           action={
             <Link
               href="/discover"
-              className="focus-ring text-sm font-medium text-primary hover:underline"
+              className="focus-ring inline-flex items-center gap-1 text-[12px] font-semibold text-primary hover:underline"
             >
-              Xem tất cả →
+              Xem tất cả
+              <MoreHorizontalIcon className="h-5 w-5" />
             </Link>
           }
         />
-        <div className="mt-8">
+        <div className="mt-4">
           <FeaturedBooks />
         </div>
       </section>
 
-      {/* Categories */}
-      <section className="border-y border-border bg-surface/50">
-        <div className="container-site py-16">
+      <section className="border-y border-border bg-surface/40">
+        <div className="container-site py-6 sm:py-8">
           <SectionHeading
-            eyebrow="Danh mục"
+            eyebrow="Thể loại"
             title="Khám phá theo chủ đề"
-            description="Từ văn học đến khoa học, tìm thấy dòng sách phù hợp với bạn."
+            description="Chọn nhanh một thể loại để lọc sách."
             action={
               <Link
                 href="/categories"
-                className="focus-ring text-sm font-medium text-primary hover:underline"
+                className="focus-ring inline-flex items-center gap-1 text-[12px] font-semibold text-primary hover:underline"
               >
-                Tất cả danh mục →
+                Tất cả danh mục
+                <MoreHorizontalIcon className="h-5 w-5" />
               </Link>
             }
           />
-          <div className="mt-8">
+          <div className="mt-4">
             <CategoryGrid />
           </div>
         </div>
       </section>
 
-      {/* Capabilities */}
-      <section className="container-site py-16">
+      <section className="container-site py-6 sm:py-8">
         <SectionHeading
-          eyebrow="Trải nghiệm"
-          title="Được thiết kế cho việc đọc"
-          description="Một hệ sinh thái liền mạch cho người viết và người đọc."
+          eyebrow="Bắt đầu"
+          title="Công cụ của bạn"
+          description="Những thao tác thường dùng, đặt gọn một chỗ."
         />
-        <div className="mt-8 grid gap-4 md:grid-cols-3">
-          {capabilities.map((item) => (
-            <Card key={item.title} className="p-6 transition-all duration-300 hover:-translate-y-1 hover:shadow-lift">
-              <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-full bg-primary/10 text-primary">
-                <item.icon className="h-5 w-5" />
-              </div>
-              <h3 className="font-serif text-xl text-foreground">{item.title}</h3>
-              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                {item.description}
-              </p>
-            </Card>
+        <div className="mt-4 grid gap-2 sm:grid-cols-3">
+          {quickActions.map((action) => (
+            <Link key={action.href} href={action.href} className="focus-ring group block">
+              <Card className="flex h-full items-center gap-3 p-3 transition-colors group-hover:border-primary/50 group-hover:bg-surface/60">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
+                  <action.icon className="h-4 w-4" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate text-[13px] font-semibold text-foreground">{action.title}</span>
+                  <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{action.description}</span>
+                </span>
+              </Card>
+            </Link>
           ))}
         </div>
       </section>
 
-      {/* Community */}
-      <section className="border-t border-border bg-surface/50">
-        <div className="container-site py-16">
-          <SectionHeading
-            eyebrow="Cộng đồng"
-            title="Đọc cùng nhau"
-            description="Chia sẻ cảm nhận, đánh giá sách và kết nối với những độc giả cùng sở thích."
-          />
-          <div className="mt-8">
-            <EmptyState
-              icon={<UserIcon className="h-6 w-6" />}
-              title="Cộng đồng đang được xây dựng"
-              description="Hoạt động, bình luận và đánh giá sẽ hiển thị tại đây khi tính năng cộng đồng sẵn sàng."
-              action={
-                <Link
-                  href="/community"
-                  className="focus-ring inline-flex h-11 items-center rounded-full bg-primary px-5 text-sm font-medium text-primary-foreground transition hover:bg-primary/90"
-                >
-                  Ghé thăm cộng đồng
-                </Link>
-              }
-            />
+      <section className="container-site pb-8">
+        <Card className="flex flex-col items-start justify-between gap-3 bg-card p-4 sm:flex-row sm:items-center">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent/40 text-accent-foreground">
+              <BookOpenIcon className="h-4 w-4" />
+            </span>
+            <div>
+              <h2 className="text-[14px] font-semibold text-foreground">Cộng đồng đọc sách</h2>
+              <p className="text-[11px] text-muted-foreground">Bình luận, đánh giá và chia sẻ cảm nhận về sách.</p>
+            </div>
           </div>
-        </div>
+          <Link
+            href="/community"
+            className="focus-ring inline-flex h-9 items-center rounded-full bg-primary px-3.5 text-[12px] font-semibold text-primary-foreground transition hover:bg-primary/90"
+          >
+            Ghé cộng đồng
+          </Link>
+        </Card>
       </section>
+
+      <HomeQuickMenu />
     </>
   );
 }

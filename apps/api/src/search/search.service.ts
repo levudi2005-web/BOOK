@@ -76,7 +76,8 @@ export class SearchService {
     const books = await this.db.query<BookRow[]>(
       `SELECT b.book_uuid, b.slug, b.title, b.subtitle, b.description, b.language,
               b.cover_storage_key, b.average_rating, b.rating_count, b.view_count,
-              b.published_at, COALESCE(GROUP_CONCAT(a.name SEPARATOR ', '), '') AS authors
+              b.published_at,
+              COALESCE(NULLIF(GROUP_CONCAT(DISTINCT a.name SEPARATOR ', '), ''), b.author_name, '') AS authors
        FROM books b
        LEFT JOIN book_authors ba ON ba.book_id = b.book_id
        LEFT JOIN authors a ON a.author_id = ba.author_id AND a.deleted_at IS NULL

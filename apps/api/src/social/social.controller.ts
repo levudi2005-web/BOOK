@@ -58,7 +58,14 @@ export class SocialController {
   saveProgress(
     @CurrentUserId() userId: number,
     @Param('slug') slug: string,
-    @Body() body: { chapterId?: number; chapterUuid?: string; percentComplete?: number; isCompleted?: boolean },
+    @Body()
+    body: {
+      chapterId?: number;
+      chapterUuid?: string;
+      percentComplete?: number;
+      isCompleted?: boolean;
+      secondsRead?: number;
+    },
   ) {
     return this.social.saveProgress(userId, slug, body);
   }

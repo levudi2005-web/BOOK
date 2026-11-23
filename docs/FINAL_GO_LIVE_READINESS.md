@@ -1,7 +1,11 @@
 # FINAL GO-LIVE READINESS — BOOKFORFREEDOM
 
-> Ngày: 2026-11-21.
-> Kết luận: **READY TO DEPLOY — CHƯA DEPLOY.** (chờ xác nhận deploy; không chạy wrangler deploy, không đổi DNS, không gắn domain, không đổi production trong phiên này.)
+> Ngày: 2026-11-21; cập nhật trạng thái: 2026-11-23.
+> Kết luận mới: **ĐÃ DEPLOY production/staging Cloudflare + VPS**, domain canonical đã hoạt động. Xem `docs/DEPLOYMENT_STATUS.md`.
+> Bản ghi dưới đây là checklist lịch sử trước khi deploy.
+
+> Ngày lịch sử: 2026-11-21.
+> Kết luận lịch sử: **READY TO DEPLOY — CHƯA DEPLOY.**
 
 ## 1. Frontend Cloudflare (OpenNext)
 

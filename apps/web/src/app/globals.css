@@ -4,41 +4,44 @@
 
 @layer base {
   :root {
-    --background: 248 247 242;
-    --foreground: 36 40 36;
-    --card: 255 255 255;
-    --card-foreground: 36 40 36;
-    --surface: 238 236 229;
-    --primary: 23 63 53;
-    --primary-foreground: 248 247 242;
-    --accent: 198 166 107;
-    --accent-foreground: 36 40 36;
-    --muted: 119 125 118;
-    --muted-foreground: 119 125 118;
-    --border: 232 229 220;
-    --ring: 198 166 107;
-    --danger: 168 60 54;
+    /* FIX.md Phase 1 palette — modern aqua / teal */
+    --background: 253 252 248; /* #FDFCF8 Soft Ivory White */
+    --foreground: 48 54 51; /* #303633 Charcoal */
+    --header: 255 254 252; /* #FFFEFC Warm Pure White */
+    --card: 255 255 255; /* #FFFFFF Pure White */
+    --card-foreground: 48 54 51;
+    --surface: 244 247 246; /* neutral aqua tint */
+    --primary: 76 207 208; /* #4CCFD0 Aqua Cyan */
+    --primary-foreground: 36 91 92; /* #245B5C Deep Teal */
+    --accent: 141 232 232; /* #8DE8E8 Soft Neon Aqua */
+    --accent-foreground: 36 91 92;
+    --muted: 107 122 118;
+    --muted-foreground: 95 107 103;
+    --border: 234 236 233; /* #EAECE9 Light Gray */
+    --ring: 76 207 208;
+    --danger: 210 76 71;
     --danger-foreground: 255 255 255;
     /* System monospace stack: no webfont needed, always available. */
     --font-mono: ui-monospace;
   }
 
   .dark {
-    --background: 15 21 18;
-    --foreground: 236 233 221;
-    --card: 27 35 29;
-    --card-foreground: 236 233 221;
-    --surface: 22 28 24;
-    --primary: 198 166 107;
-    --primary-foreground: 15 21 18;
-    --accent: 198 166 107;
-    --accent-foreground: 15 21 18;
-    --muted: 154 163 154;
-    --muted-foreground: 154 163 154;
-    --border: 44 52 46;
-    --ring: 198 166 107;
-    --danger: 214 96 88;
-    --danger-foreground: 15 21 18;
+    --background: 15 27 26;
+    --foreground: 236 245 242;
+    --header: 20 35 33;
+    --card: 20 35 33;
+    --card-foreground: 236 245 242;
+    --surface: 17 32 30;
+    --primary: 76 207 208;
+    --primary-foreground: 15 27 26;
+    --accent: 141 232 232;
+    --accent-foreground: 15 27 26;
+    --muted: 156 179 173;
+    --muted-foreground: 156 179 173;
+    --border: 36 59 56;
+    --ring: 141 232 232;
+    --danger: 226 110 103;
+    --danger-foreground: 15 27 26;
   }
 
   * {
@@ -63,8 +66,9 @@
   h2,
   h3,
   h4 {
-    font-family: var(--font-serif), Georgia, Cambria, 'Times New Roman', 'Noto Serif', serif;
-    letter-spacing: -0.01em;
+    font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+    font-weight: 600;
+    letter-spacing: -0.015em;
   }
 
   code,
@@ -78,13 +82,20 @@
   ::selection {
     background: rgb(var(--accent) / 0.35);
   }
+
+  /* One clear button only (the page provides its own close action). */
+  input[type='search']::-webkit-search-cancel-button,
+  input[type='search']::-webkit-search-decoration {
+    -webkit-appearance: none;
+    appearance: none;
+  }
 }
 
 @layer components {
   .container-site {
     margin-inline: auto;
     width: 100%;
-    max-width: 76rem;
+    max-width: 72rem;
     padding-inline: 1rem;
   }
 
@@ -300,4 +311,35 @@
 .pdf-preview-content h1:first-child {
   margin-top: 0;
   text-align: center;
+}
+
+.book-page-animate {
+  animation: book-page-turn 360ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  transform-origin: left center;
+}
+
+@keyframes book-page-turn {
+  0% {
+    transform: perspective(1400px) rotateY(-18deg) translateX(12px);
+    opacity: 0.35;
+  }
+  100% {
+    transform: perspective(1400px) rotateY(0deg) translateX(0);
+    opacity: 1;
+  }
+}
+
+.book-page-content .tiptap {
+  min-height: 0;
+}
+
+.book-page-content img {
+  max-height: 55%;
+  object-fit: contain;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .book-page-animate {
+    animation: none;
+  }
 }

@@ -46,6 +46,22 @@ services:
       retries: 10
       start_period: 10s
 
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://freedombook.duckdns.org/api}
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-https://freedombook.duckdns.org}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
+      TZ: ${TZ:-UTC}
+    ports:
+      - "127.0.0.1:3000:3000"
+
   api:
     build:
       context: .

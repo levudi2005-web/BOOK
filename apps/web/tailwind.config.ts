@@ -8,6 +8,7 @@ const config: Config = {
       colors: {
         background: 'rgb(var(--background) / <alpha-value>)',
         foreground: 'rgb(var(--foreground) / <alpha-value>)',
+        header: 'rgb(var(--header) / <alpha-value>)',
         card: 'rgb(var(--card) / <alpha-value>)',
         'card-foreground': 'rgb(var(--card-foreground) / <alpha-value>)',
         surface: 'rgb(var(--surface) / <alpha-value>)',

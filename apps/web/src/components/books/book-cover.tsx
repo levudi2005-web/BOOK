@@ -23,17 +23,19 @@ export type BookCoverProps = {
   priority?: boolean;
   showSpine?: boolean;
   placeholderLabel?: string;
+  /** Gradient-only placeholder for tiny thumbnails (search rows, etc.). */
+  minimal?: boolean;
   /** Overrides the default `Bìa sách <title>` alt text. */
   alt?: string;
 };
 
 const palettes = [
-  ['#12352c', '#2f6b56'],
-  ['#3d2b22', '#7a5340'],
-  ['#1f2a44', '#3f5b8c'],
-  ['#3a2438', '#6d4368'],
-  ['#243027', '#4d6b4a'],
-  ['#402b2b', '#7d4c46'],
+  ['#245B5C', '#4CCFD0'],
+  ['#0F3D3E', '#8DE8E8'],
+  ['#2E6F70', '#4CCFD0'],
+  ['#163B3C', '#6FDEDE'],
+  ['#3B7C7D', '#8DE8E8'],
+  ['#1B4A4B', '#A5F0F0'],
 ];
 
 function hash(input: string): number {
@@ -73,6 +75,7 @@ export function BookCover({
   priority = false,
   showSpine = true,
   placeholderLabel = 'Bìa thay thế',
+  minimal = false,
   alt,
 }: BookCoverProps) {
   const [state, setState] = useState<CoverState>('empty');
@@ -152,10 +155,10 @@ export function BookCover({
   const showPlaceholder = !showImage;
 
   return (
-    <div className={cn('relative isolate aspect-[2/3] overflow-hidden rounded-lg bg-surface shadow-soft', className)}>
+    <div className={cn('relative isolate aspect-[2/3] overflow-hidden rounded-md bg-surface shadow-soft', className)}>
       {showPlaceholder ? (
         <div
-          className="absolute inset-0 flex flex-col items-center justify-center px-3 py-4 text-center"
+          className="absolute inset-0 flex flex-col items-center justify-center px-2 py-3 text-center"
           style={{ background: `linear-gradient(155deg, ${from} 0%, ${to} 100%)` }}
           role={coverKey ? 'img' : undefined}
           aria-label={coverKey ? `Bìa sách ${title}` : undefined}
@@ -170,18 +173,24 @@ export function BookCover({
           />
           <span className="pointer-events-none absolute inset-y-0 left-0 w-[6px] bg-black/25" />
           <span className="pointer-events-none absolute inset-1 rounded-[4px] border border-white/20" />
-          <span className="relative line-clamp-4 font-serif text-[clamp(0.8rem,1.1vw+0.5rem,1.35rem)] leading-snug text-white">
-            {title}
-          </span>
-          {subtitle ? (
-            <span className="relative mt-1.5 line-clamp-2 text-[0.62rem] uppercase tracking-[0.14em] text-white/60">
-              {subtitle}
-            </span>
+          {!minimal ? (
+            <>
+              <span className="relative line-clamp-4 pb-0.5 text-[clamp(0.65rem,0.7vw+0.45rem,1rem)] font-semibold leading-normal text-white">
+                {title}
+              </span>
+              {subtitle ? (
+                <span className="relative mt-1 line-clamp-2 leading-normal text-[0.5rem] uppercase tracking-[0.08em] text-white/65">
+                  {subtitle}
+                </span>
+              ) : null}
+              {authorName ? <span className="relative mt-1.5 text-[0.55rem] text-white/75">{authorName}</span> : null}
+              {placeholderLabel ? (
+                <span className="relative mt-2 rounded-full border border-white/30 px-1.5 py-[1px] text-[0.42rem] uppercase tracking-[0.12em] text-white/70">
+                  {placeholderLabel}
+                </span>
+              ) : null}
+            </>
           ) : null}
-          {authorName ? <span className="relative mt-2 text-[0.65rem] text-white/75">{authorName}</span> : null}
-          <span className="relative mt-3 rounded-full border border-white/30 px-2 py-[2px] text-[0.5rem] uppercase tracking-[0.18em] text-white/70">
-            {placeholderLabel}
-          </span>
         </div>
       ) : null}
 

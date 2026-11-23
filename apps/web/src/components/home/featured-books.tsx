@@ -13,7 +13,7 @@ export function FeaturedBooks() {
 
   useEffect(() => {
     let active = true;
-    fetchBooks({ sort: 'newest', limit: 8 })
+    fetchBooks({ sort: 'newest', limit: 15 })
       .then((response) => {
         if (active) setBooks(response.data);
       })
@@ -30,8 +30,8 @@ export function FeaturedBooks() {
 
   if (loading) {
     return (
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, index) => (
+      <div className="grid grid-cols-3 gap-x-3 gap-y-5 sm:grid-cols-4 lg:grid-cols-5">
+        {Array.from({ length: 15 }).map((_, index) => (
           <BookCardSkeleton key={index} />
         ))}
       </div>
@@ -55,7 +55,7 @@ export function FeaturedBooks() {
   }
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="grid grid-cols-3 gap-x-3 gap-y-5 sm:grid-cols-4 lg:grid-cols-5">
       {books.map((book) => (
         <BookCard key={book.book_uuid} book={book} />
       ))}

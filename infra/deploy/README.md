@@ -1,6 +1,6 @@
 # Deployment
 
-Cấu hình Nginx cho `freedombook.duckdns.org` nằm trong `nginx/`; ứng dụng chạy bằng Docker Compose.
+Cấu hình Nginx cho `freedombook.duckdns.org` nằm trong `nginx/`; ứng dụng chạy bằng Docker Compose. Domain canonical phục vụ web container `127.0.0.1:3000`; API cùng origin tại `/api/` → `127.0.0.1:3001`. Cloudflare Worker là lớp deploy song song/fallback, không còn là đích redirect của domain.
 Database là MariaDB 10.11 trong Compose (`mariadb`), dữ liệu ở volume `mariadb_data`; backup trước khi nâng cấp/redeploy.
 TLS được cấp và tự gia hạn bằng Certbot; cần đặt email liên hệ của chủ domain để nhận thông báo hết hạn.
 Giai đoạn 0; phụ thuộc Docker Compose, Nginx và Certbot.

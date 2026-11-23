@@ -11,9 +11,10 @@ import TextAlign from '@tiptap/extension-text-align';
 import { TextStyle } from '@tiptap/extension-text-style';
 import { EditorContent, NodeViewWrapper, ReactNodeViewRenderer, useEditor, type NodeViewProps } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useToast } from '@/components/toast';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { cancelUpload, completeUpload, downloadStorageObject, getStorageQuota, initUpload, uploadChunk } from '@/lib/api';
 import { normalizeRichContent } from '@/lib/rich-content';
 
@@ -202,12 +203,16 @@ export function RichTextEditor({
   onChange,
   placeholder = 'Bắt đầu viết nội dung…',
   ariaLabel = 'Nội dung chương',
+  pageStyle,
+  pageClassName,
 }: {
   id?: string;
   content: string;
   onChange: (html: string) => void;
   placeholder?: string;
   ariaLabel?: string;
+  pageStyle?: CSSProperties;
+  pageClassName?: string;
 }) {
   const { toast } = useToast();
   const onChangeRef = useRef(onChange);
@@ -435,7 +440,15 @@ export function RichTextEditor({
         <Button type="button" size="sm" variant="outline" onClick={replaceAll}>Thay tất cả</Button>
       </div>
 
-      <EditorContent editor={editor} />
+      <div
+        className={cn(
+          'book-writing-surface mx-auto my-5 rounded-[3px] border border-black/10 px-[9%] py-[8%]',
+          pageClassName,
+        )}
+        style={pageStyle}
+      >
+        <EditorContent editor={editor} />
+      </div>
       <div className="flex flex-wrap justify-between gap-2 border-t border-border px-3 py-2 text-xs text-muted-foreground">
         <span>{placeholder}</span>
         <span>{stats.words.toLocaleString('vi-VN')} từ · {stats.characters.toLocaleString('vi-VN')} ký tự</span>

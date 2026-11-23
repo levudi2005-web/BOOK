@@ -234,6 +234,12 @@ export function BookDetail() {
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="accent">{book.language}</Badge>
+              <Badge variant="outline">
+                {book.age_rating && book.age_rating !== 'all' ? `${book.age_rating} tuổi` : 'Mọi độ tuổi'}
+              </Badge>
+              <Badge variant="muted">
+                {book.layout?.trimSize ?? 'A5'} · {(book.layout?.widthMm ?? 148) / 10} × {(book.layout?.heightMm ?? 210) / 10} cm
+              </Badge>
               <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
                 <StarIcon className="h-4 w-4 text-accent" />
                 {rating.toFixed(1)} · {book.rating_count} đánh giá
@@ -270,7 +276,11 @@ export function BookDetail() {
             {book.categories.length > 0 ? (
               <div className="mt-3 flex flex-wrap gap-2">
                 {book.categories.map((category) => (
-                  <Link key={category.category_id} href={`/discover?category=${encodeURIComponent(category.slug)}`}>
+                  <Link
+                    key={category.category_id}
+                    href={`/discover?categories=${encodeURIComponent(category.slug)}`}
+                    title={category.group_name ?? undefined}
+                  >
                     <Badge variant="muted">{category.name}</Badge>
                   </Link>
                 ))}

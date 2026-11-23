@@ -15,10 +15,14 @@ import {
   deleteStudioBook,
   isAuthError,
   listMyBooks,
+  listStudioCategories,
   publishBook,
+  setStudioCategories,
   type StudioBook,
+  type StudioCategoryGroup,
 } from '@/lib/api';
 import { BookCover } from '@/components/books/book-cover';
+import { CategoryPicker } from '@/components/categories/category-picker';
 import { statusLabel, validateMetadata, visibilityLabel } from '@/lib/studio-validation';
 
 const LANGUAGES = [
@@ -26,7 +30,22 @@ const LANGUAGES = [
   { value: 'en', label: 'English' },
 ];
 
-const emptyForm = { title: '', subtitle: '', description: '', language: 'vi' };
+const AGE_RATINGS = [
+  { value: 'all', label: 'Mọi độ tuổi' },
+  { value: '6+', label: 'Từ 6 tuổi' },
+  { value: '13+', label: 'Từ 13 tuổi' },
+  { value: '16+', label: 'Từ 16 tuổi' },
+  { value: '18+', label: 'Từ 18 tuổi' },
+  { value: '19+', label: 'Từ 19 tuổi' },
+];
+
+const emptyForm = {
+  title: '',
+  subtitle: '',
+  description: '',
+  language: 'vi',
+  ageRating: 'all',
+};
 
 function MyBookCover({ book }: { book: StudioBook }) {
   // Chỉ sách đã xuất bản Community mới có bìa công khai; draft sách riêng tư
@@ -53,6 +72,8 @@ export default function WritePage() {
   const [authRequired, setAuthRequired] = useState(false);
   const [error, setError] = useState('');
   const [form, setForm] = useState(emptyForm);
+  const [categoryGroups, setCategoryGroups] = useState<StudioCategoryGroup[]>([]);
+  const [selectedCategories, setSelectedCategories] = useState<number[]>([]);
   const [creating, setCreating] = useState(false);
   const [busyUuid, setBusyUuid] = useState('');
   const [confirmDeleteUuid, setConfirmDeleteUuid] = useState('');
@@ -85,6 +106,20 @@ export default function WritePage() {
     void refresh();
   }, [refresh]);
 
+  useEffect(() => {
+    let active = true;
+    listStudioCategories()
+      .then((response) => {
+        if (active) setCategoryGroups(response.groups);
+      })
+      .catch(() => {
+        if (active) setCategoryGroups([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   async function onCreate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const validationError = validateMetadata(form);
@@ -94,13 +129,18 @@ export default function WritePage() {
     }
     setCreating(true);
     try {
-      await createBook({
+      const created = await createBook({
         title: form.title.trim(),
         subtitle: form.subtitle.trim(),
         description: form.description,
         language: form.language,
+        ageRating: form.ageRating,
       });
+      if (selectedCategories.length > 0) {
+        await setStudioCategories(created.bookUuid, selectedCategories);
+      }
       setForm(emptyForm);
+      setSelectedCategories([]);
       await refresh();
       toast('Đã tạo bản thảo mới.', 'success');
     } catch (createError) {
@@ -263,19 +303,35 @@ export default function WritePage() {
               />
             </div>
           </div>
-          <div className="max-w-xs">
-            <Label htmlFor="new-language">Ngôn ngữ</Label>
-            <Select
-              id="new-language"
-              value={form.language}
-              onChange={(event) => setForm((current) => ({ ...current, language: event.target.value }))}
-            >
-              {LANGUAGES.map((language) => (
-                <option key={language.value} value={language.value}>
-                  {language.label}
-                </option>
-              ))}
-            </Select>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="max-w-xs">
+              <Label htmlFor="new-language">Ngôn ngữ</Label>
+              <Select
+                id="new-language"
+                value={form.language}
+                onChange={(event) => setForm((current) => ({ ...current, language: event.target.value }))}
+              >
+                {LANGUAGES.map((language) => (
+                  <option key={language.value} value={language.value}>
+                    {language.label}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className="max-w-xs">
+              <Label htmlFor="new-age-rating">Độ tuổi phù hợp</Label>
+              <Select
+                id="new-age-rating"
+                value={form.ageRating}
+                onChange={(event) => setForm((current) => ({ ...current, ageRating: event.target.value }))}
+              >
+                {AGE_RATINGS.map((rating) => (
+                  <option key={rating.value} value={rating.value}>
+                    {rating.label}
+                  </option>
+                ))}
+              </Select>
+            </div>
           </div>
           <div>
             <Label htmlFor="new-description">Mô tả</Label>
@@ -287,6 +343,41 @@ export default function WritePage() {
               onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
             />
           </div>
+          <details className="rounded-xl border border-border bg-card">
+            <summary className="cursor-pointer list-none px-3 py-2.5 text-sm font-medium text-foreground">
+              Thể loại <span className="text-muted-foreground">({selectedCategories.length} đã chọn)</span>
+            </summary>
+            <div className="border-t border-border p-3">
+              {categoryGroups.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Chưa tải được danh mục.</p>
+              ) : (
+                <CategoryPicker
+                  idPrefix="create-book-category"
+                  groups={categoryGroups.map((group) => ({
+                    id: group.categoryId,
+                    name: group.name,
+                    slug: group.slug,
+                    description: group.description,
+                    icon: group.icon,
+                    children: group.children.map((child) => ({
+                      id: child.categoryId,
+                      name: child.name,
+                      slug: child.slug,
+                      description: child.description,
+                      icon: child.icon,
+                    })),
+                  }))}
+                  selected={selectedCategories.map(String)}
+                  valueKey="id"
+                  onChange={(values) =>
+                    setSelectedCategories(
+                      values.map((value) => Number.parseInt(value, 10)).filter((value) => value > 0),
+                    )
+                  }
+                />
+              )}
+            </div>
+          </details>
           <Button type="submit" disabled={creating || !form.title.trim()}>
             {creating ? 'Đang tạo…' : 'Tạo bản thảo'}
           </Button>
@@ -317,7 +408,7 @@ export default function WritePage() {
                   </Badge>
                   <Badge variant="outline">{visibilityLabel(book.visibility)}</Badge>
                 </div>
-                <h3 className="mt-3 line-clamp-2 font-serif text-lg text-foreground">{book.title}</h3>
+                <h3 className="mt-3 line-clamp-2 pb-0.5 font-serif text-lg leading-normal text-foreground">{book.title}</h3>
                 {book.subtitle ? (
                   <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{book.subtitle}</p>
                 ) : null}

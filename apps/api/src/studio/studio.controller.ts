@@ -28,7 +28,7 @@ export class StudioController {
   @Post('books')
   createBook(
     @CurrentUserId() userId: number,
-    @Body() body: { title?: string; subtitle?: string; description?: string; language?: string },
+    @Body() body: { title?: string; subtitle?: string; description?: string; language?: string; ageRating?: string },
   ) {
     return this.studio.createBook(userId, body);
   }
@@ -42,7 +42,24 @@ export class StudioController {
   updateBook(
     @CurrentUserId() userId: number,
     @Param('bookUuid') bookUuid: string,
-    @Body() body: { title?: string; subtitle?: string; description?: string; language?: string },
+    @Body()
+    body: {
+      title?: string;
+      subtitle?: string;
+      description?: string;
+      language?: string;
+      ageRating?: string;
+      authorName?: string;
+      publisherName?: string;
+      publicationYear?: number;
+      trimSize?: string;
+      trimWidthMm?: number;
+      trimHeightMm?: number;
+      pageStyle?: string;
+      pageEffect?: string;
+      showPageNumbers?: boolean;
+      readerDefaultMode?: string;
+    },
   ) {
     return this.studio.updateBook(userId, bookUuid, body);
   }

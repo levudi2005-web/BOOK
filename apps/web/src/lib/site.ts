@@ -3,9 +3,9 @@ import { normalizeApiBase } from './api-url';
 export const siteConfig = {
   name: 'BOOKFORFREEDOM',
   version: 'v2.1.0.0-USaD',
-  tagline: 'Thư viện số cho những tâm hồn tự do.',
+  tagline: 'Đọc, viết và khám phá sách trong một nơi.',
   description:
-    'Nền tảng thư viện số cao cấp: viết, đọc, khám phá và chia sẻ sách trong một không gian yên tĩnh, có chiều sâu.',
+    'Nền tảng đọc và viết sách: khám phá thư viện, theo dõi tiến độ đọc và chia sẻ tác phẩm của bạn.',
   // Không hardcode domain production. Được inject qua env tại build time.
   url: process.env.NEXT_PUBLIC_APP_URL ?? '',
   apiUrl: normalizeApiBase(process.env.NEXT_PUBLIC_API_URL),

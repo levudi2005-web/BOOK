@@ -24,6 +24,7 @@ import {
   type StudioBookDetail,
 } from '@/lib/api';
 import { BookCover } from '@/components/books/book-cover';
+import { SectionQuickMenu } from '@/components/section-quick-menu';
 
 type Form = { displayName: string; bio: string; websiteUrl: string; isPublic: boolean };
 
@@ -209,6 +210,7 @@ export default function ProfilePage() {
     { label: 'Đang đọc', value: profile.stats.reading },
     { label: 'Sách đã tạo', value: profile.stats.books },
     { label: 'Bình luận', value: profile.stats.comments },
+    { label: 'Phút đọc', value: profile.stats.readingMinutes ?? 0 },
   ];
 
   return (
@@ -405,6 +407,7 @@ export default function ProfilePage() {
           </Button>
         </form>
       </Card>
+      <SectionQuickMenu active="/profile" />
     </div>
   );
 }

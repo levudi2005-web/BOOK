@@ -26,9 +26,13 @@ export class SocialService {
     const rows = await this.db.query<Record<string, unknown>[]>(
       `SELECT b.book_uuid, b.slug, b.title, b.subtitle, b.cover_storage_key, b.cover_mime_type,
               b.visibility AS book_visibility, b.status AS book_status,
-              ul.status, ul.is_favorite, ul.added_at, ul.last_opened_at, ul.finished_at
+              ul.status, ul.is_favorite, ul.added_at, ul.last_opened_at, ul.finished_at,
+              COALESCE(rp.percent_complete, 0) AS progress_percent,
+              COALESCE(rp.seconds_read, 0) AS seconds_read,
+              rp.page_number, rp.total_pages
        FROM user_library ul
        JOIN books b ON b.book_id = ul.book_id
+       LEFT JOIN reading_progress rp ON rp.user_id = ul.user_id AND rp.book_id = ul.book_id
        WHERE ul.user_id = ? AND ul.removed_at IS NULL AND b.deleted_at IS NULL
        ORDER BY ul.last_opened_at DESC, ul.added_at DESC`,
       [userId],
@@ -96,10 +100,11 @@ export class SocialService {
         completed_at: Date | string | null;
         last_read_at: Date | string | null;
         chapter_uuid: string | null;
+        seconds_read: number | string;
       }[]
     >(
       `SELECT rp.percent_complete, rp.is_completed, rp.completed_at, rp.last_read_at,
-              bc.chapter_uuid
+              rp.seconds_read, bc.chapter_uuid
        FROM reading_progress rp
        LEFT JOIN book_chapters bc ON bc.chapter_id = rp.chapter_id
        WHERE rp.user_id = ? AND rp.book_id = ? LIMIT 1`,
@@ -115,30 +120,39 @@ export class SocialService {
       chapterUuid: row.chapter_uuid,
       lastReadAt: row.last_read_at,
       completedAt: row.completed_at,
+      secondsRead: Number(row.seconds_read ?? 0),
     };
   }
 
   async saveProgress(
     userId: number,
     slug: string,
-    input: { chapterId?: number; chapterUuid?: string; percentComplete?: number; isCompleted?: boolean },
+    input: {
+      chapterId?: number;
+      chapterUuid?: string;
+      percentComplete?: number;
+      isCompleted?: boolean;
+      secondsRead?: number;
+    },
   ) {
     const book = await this.resolveBook(slug);
     const pct = Math.min(100, Math.max(0, Number(input.percentComplete ?? 0)));
     const completed = input.isCompleted === true || pct >= 100;
     const chapterId = await this.resolveChapterId(book.book_id, input.chapterId, input.chapterUuid);
+    const secondsRead = Math.min(3600, Math.max(0, Math.round(Number(input.secondsRead ?? 0))));
 
     await this.db.query(
       `INSERT INTO reading_progress
-         (user_id, book_id, chapter_id, percent_complete, is_completed, completed_at)
-       VALUES (?, ?, ?, ?, ?, ?)
+         (user_id, book_id, chapter_id, percent_complete, is_completed, completed_at, seconds_read)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE
          chapter_id = VALUES(chapter_id),
          percent_complete = VALUES(percent_complete),
          is_completed = VALUES(is_completed),
          completed_at = VALUES(completed_at),
+         seconds_read = seconds_read + VALUES(seconds_read),
          last_read_at = NOW(3)`,
-      [userId, book.book_id, chapterId, pct, completed ? 1 : 0, completed ? new Date() : null],
+      [userId, book.book_id, chapterId, pct, completed ? 1 : 0, completed ? new Date() : null, secondsRead],
     );
 
     await this.db.query(

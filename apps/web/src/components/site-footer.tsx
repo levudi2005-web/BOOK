@@ -11,58 +11,40 @@ const footerLinks = [
 
 export function SiteFooter() {
   return (
-    <footer className="mt-20 border-t border-border bg-surface/60">
-      <div className="container-site py-12">
-        <div className="grid gap-10 md:grid-cols-[1.4fr_1fr_1fr]">
-          <div className="max-w-sm">
-            <Logo />
-            <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
-              {siteConfig.tagline} Một không gian đọc yên tĩnh, có chiều sâu và bản sắc riêng.
-            </p>
-          </div>
-
-          <div>
-            <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-              Khám phá
-            </p>
-            <ul className="space-y-2.5">
-              {primaryNav.map((item) => (
-                <li key={item.href}>
-                  <Link
-                    href={item.href}
-                    className="focus-ring text-sm text-foreground transition-colors hover:text-primary"
-                  >
-                    {item.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div>
-            <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-              Thông tin
-            </p>
-            <ul className="space-y-2.5">
-              {footerLinks.map((item) => (
-                <li key={item.label}>
-                  <Link
-                    href={item.href}
-                    className="focus-ring text-sm text-foreground transition-colors hover:text-primary"
-                  >
-                    {item.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
+    <footer className="mt-8 border-t border-border bg-surface/40">
+      <div className="container-site flex flex-col gap-1.5 py-2.5 text-[10px] text-muted-foreground lg:flex-row lg:items-center lg:justify-between lg:gap-3">
+        <div className="flex min-w-0 shrink-0 items-center">
+          <Logo />
         </div>
 
-        <div className="mt-10 flex flex-col gap-2 border-t border-border pt-6 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-          <p>© {new Date().getFullYear()} {siteConfig.name}. Bảo lưu mọi quyền.</p>
-          <p className="sm:text-right">
-            Phiên bản {siteConfig.version} đang nâng cấp và Website sẽ bị gián đoạn, các chức năng,UI/UX sẽ bị thay đổi toàn bộ, các chức năng mới sẽ được thêm vào và đồng bộ tối ưu nhất. Mọi tài khoản, tài liệu của bạn sẽ bị xóa bỏ toàn bộ để cấu hình lại docker hệ thống, xin cảm ơn. Bản v1 chỉ là bản test từ bản v2 trở đi sẽ là bản chính thức
-          </p>
+        <nav aria-label="Liên kết chân trang" className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
+          {primaryNav.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="focus-ring text-[10px] text-foreground transition-colors hover:text-primary"
+            >
+              {item.label}
+            </Link>
+          ))}
+          <span className="h-2.5 w-px bg-border" aria-hidden="true" />
+          {footerLinks.map((item) => (
+            <Link
+              key={item.label}
+              href={item.href}
+              className="focus-ring text-[10px] text-muted-foreground transition-colors hover:text-primary"
+            >
+              {item.label}
+            </Link>
+          ))}
+        </nav>
+
+        <div className="flex shrink-0 flex-wrap items-center gap-x-1 text-[9px] lg:whitespace-nowrap">
+          <span>© {new Date().getFullYear()} {siteConfig.name}</span>
+          <span aria-hidden="true">·</span>
+          <span>v{siteConfig.version.replace(/^v/, '')}</span>
+          <span aria-hidden="true">·</span>
+          <span>Đang phát triển</span>
         </div>
       </div>
     </footer>

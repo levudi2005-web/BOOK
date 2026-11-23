@@ -29,6 +29,14 @@ type BookRow = {
   publisher_name: string | null;
   publication_year: number | null;
   publication_scope: string | null;
+  age_rating: string;
+  trim_size: string;
+  trim_width_mm: string | number;
+  trim_height_mm: string | number;
+  page_style: string;
+  page_effect: string;
+  show_page_numbers: number;
+  reader_default_mode: string;
   slug: string;
   description: string | null;
   language: string;
@@ -61,6 +69,22 @@ function countWords(input: string): number {
   const normalized = stripHtml(input).trim();
   if (!normalized) return 0;
   return normalized.split(/\s+/).filter(Boolean).length;
+}
+
+const AGE_RATINGS = new Set(['all', '6+', '13+', '16+', '18+', '19+']);
+
+function normalizeAgeRating(value: unknown, fallback = 'all'): string {
+  return typeof value === 'string' && AGE_RATINGS.has(value) ? value : fallback;
+}
+
+const PAGE_STYLES = new Set(['blank', 'lines', 'grid']);
+const PAGE_EFFECTS = new Set(['paper', 'flip', 'web']);
+const READER_MODES = new Set(['page', 'flip', 'scroll']);
+
+function clampDimension(value: unknown, fallback: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(500, Math.max(50, Math.round(parsed * 100) / 100));
 }
 
 function slugify(title: string): string {
@@ -105,7 +129,10 @@ export class StudioService {
     private readonly storage: StorageService,
   ) {}
 
-  async createBook(userId: number, input: { title?: string; subtitle?: string; description?: string; language?: string }) {
+  async createBook(
+    userId: number,
+    input: { title?: string; subtitle?: string; description?: string; language?: string; ageRating?: string },
+  ) {
     const title = (input.title ?? '').trim();
     if (title.length < 2 || title.length > 500) {
       throw new ForbiddenException('Tiêu đề sách không hợp lệ.');
@@ -115,9 +142,18 @@ export class StudioService {
 
     const result = await this.db.query<{ insertId: number }>(
       `INSERT INTO books
-         (book_uuid, title, subtitle, slug, description, language, status, visibility, created_by_user_id)
-       VALUES (?, ?, ?, ?, ?, ?, 'draft', 'private', ?)`,
-      [bookUuid, title, input.subtitle ?? null, slug, input.description ?? null, input.language ?? 'vi', userId],
+         (book_uuid, title, subtitle, slug, description, language, age_rating, status, visibility, created_by_user_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', 'private', ?)`,
+      [
+        bookUuid,
+        title,
+        input.subtitle ?? null,
+        slug,
+        input.description ?? null,
+        input.language ?? 'vi',
+        normalizeAgeRating(input.ageRating),
+        userId,
+      ],
     );
     return this.getBook(userId, bookUuid, result.insertId);
   }
@@ -127,7 +163,7 @@ export class StudioService {
       `SELECT book_id, book_uuid, title, subtitle, slug, description, language,
               status, visibility, published_at, created_by_user_id,
               cover_storage_key, cover_mime_type,
-              author_name, publisher_name, publication_year, publication_scope
+              author_name, publisher_name, publication_year, publication_scope, age_rating, trim_size, trim_width_mm, trim_height_mm, page_style, page_effect, show_page_numbers, reader_default_mode
        FROM books
        WHERE created_by_user_id = ? AND deleted_at IS NULL
        ORDER BY updated_at DESC`,
@@ -141,7 +177,7 @@ export class StudioService {
       `SELECT book_id, book_uuid, title, subtitle, slug, description, language,
               status, visibility, published_at, created_by_user_id,
               cover_storage_key, cover_mime_type,
-              author_name, publisher_name, publication_year, publication_scope
+              author_name, publisher_name, publication_year, publication_scope, age_rating, trim_size, trim_width_mm, trim_height_mm, page_style, page_effect, show_page_numbers, reader_default_mode
        FROM books
        WHERE book_uuid = ? AND deleted_at IS NULL
        LIMIT 1`,
@@ -163,12 +199,25 @@ export class StudioService {
       [book.book_id],
     );
 
-    const bookCategories = await this.db.query<{ category_id: number; name: string; slug: string }[]>(
-      `SELECT c.category_id, c.name, c.slug
+    const bookCategories = await this.db.query<
+      {
+        category_id: number;
+        parent_category_id: number | null;
+        name: string;
+        slug: string;
+        description: string | null;
+        icon: string | null;
+        group_name: string | null;
+        group_slug: string | null;
+      }[]
+    >(
+      `SELECT c.category_id, c.parent_category_id, c.name, c.slug, c.description, c.icon,
+              g.name AS group_name, g.slug AS group_slug
        FROM book_categories bc
        JOIN categories c ON c.category_id = bc.category_id
-       WHERE bc.book_id = ?
-       ORDER BY c.name`,
+       LEFT JOIN categories g ON g.category_id = c.parent_category_id
+       WHERE bc.book_id = ? AND c.is_active = 1
+       ORDER BY g.sort_order, c.sort_order, c.name`,
       [book.book_id],
     );
     const bookTags = await this.db.query<{ name: string; slug: string }[]>(
@@ -193,8 +242,13 @@ export class StudioService {
       })),
       categories: bookCategories.map((row) => ({
         categoryId: row.category_id,
+        parentCategoryId: row.parent_category_id,
         name: row.name,
         slug: row.slug,
+        description: row.description,
+        icon: row.icon,
+        groupName: row.group_name,
+        groupSlug: row.group_slug,
       })),
       tags: bookTags.map((row) => row.name),
     };
@@ -211,6 +265,14 @@ export class StudioService {
       authorName?: string;
       publisherName?: string;
       publicationYear?: number;
+      ageRating?: string;
+      trimSize?: string;
+      trimWidthMm?: number;
+      trimHeightMm?: number;
+      pageStyle?: string;
+      pageEffect?: string;
+      showPageNumbers?: boolean;
+      readerDefaultMode?: string;
     },
   ) {
     const book = await this.requireOwnedBook(userId, bookUuid);
@@ -219,11 +281,15 @@ export class StudioService {
       throw new ForbiddenException('Tiêu đề sách không hợp lệ.');
     }
     const slug = title !== book.title ? await this.uniqueSlug(slugify(title)) : book.slug;
+    const trimWidth = clampDimension(input.trimWidthMm, Number(book.trim_width_mm) || 148);
+    const trimHeight = clampDimension(input.trimHeightMm, Number(book.trim_height_mm) || 210);
 
     await this.db.query(
       `UPDATE books
        SET title = ?, subtitle = ?, description = ?, language = ?, slug = ?,
-           author_name = ?, publisher_name = ?, publication_year = ?
+           author_name = ?, publisher_name = ?, publication_year = ?, age_rating = ?,
+           trim_size = ?, trim_width_mm = ?, trim_height_mm = ?, page_style = ?,
+           page_effect = ?, show_page_numbers = ?, reader_default_mode = ?
        WHERE book_id = ?`,
       [
         title,
@@ -234,6 +300,16 @@ export class StudioService {
         input.authorName !== undefined ? input.authorName.trim() : book.author_name,
         input.publisherName !== undefined ? input.publisherName.trim() || null : book.publisher_name,
         input.publicationYear !== undefined ? input.publicationYear : book.publication_year,
+        input.ageRating !== undefined ? normalizeAgeRating(input.ageRating, book.age_rating) : book.age_rating,
+        input.trimSize !== undefined ? input.trimSize.trim().slice(0, 20) || 'A5' : book.trim_size,
+        trimWidth,
+        trimHeight,
+        input.pageStyle && PAGE_STYLES.has(input.pageStyle) ? input.pageStyle : book.page_style,
+        input.pageEffect && PAGE_EFFECTS.has(input.pageEffect) ? input.pageEffect : book.page_effect,
+        input.showPageNumbers !== undefined ? (input.showPageNumbers ? 1 : 0) : book.show_page_numbers,
+        input.readerDefaultMode && READER_MODES.has(input.readerDefaultMode)
+          ? input.readerDefaultMode
+          : book.reader_default_mode,
         book.book_id,
       ],
     );
@@ -453,6 +529,9 @@ export class StudioService {
     if (totalWords === 0) {
       throw new BadRequestException('Chương chưa có nội dung để xuất bản.');
     }
+    const pageArea = Number(book.trim_width_mm || 148) * Number(book.trim_height_mm || 210);
+    const wordsPerPage = Math.max(90, Math.round((pageArea / (148 * 210)) * 220));
+    const pageCount = Math.max(1, Math.ceil(totalWords / wordsPerPage));
 
     const connection = await this.db.getConnection();
     try {
@@ -462,7 +541,7 @@ export class StudioService {
          SET status = 'published',
              visibility = ?, publication_scope = ?, author_name = ?, publisher_name = ?,
              publication_year = ?, publication_date = ?,
-             published_at = NOW(3), word_count = ?
+             published_at = NOW(3), word_count = ?, page_count = ?
          WHERE book_id = ?`,
         [
           scope === 'community' ? 'public' : 'private',
@@ -472,6 +551,7 @@ export class StudioService {
           publicationYear,
           `${publicationYear}-01-01`,
           totalWords,
+          pageCount,
           book.book_id,
         ],
       );
@@ -505,32 +585,48 @@ export class StudioService {
 
   async listAvailableCategories() {
     const rows = await this.db.query<
-      { category_id: number; name: string; slug: string; parent_category_id: number | null }[]
+      {
+        category_id: number;
+        name: string;
+        slug: string;
+        description: string | null;
+        icon: string | null;
+        parent_category_id: number | null;
+        sort_order: number;
+      }[]
     >(
-      `SELECT category_id, name, slug, parent_category_id
+      `SELECT category_id, name, slug, description, icon, parent_category_id, sort_order
        FROM categories WHERE is_active = 1
        ORDER BY sort_order, name`,
     );
+    const mapped = rows.map((row) => ({
+      categoryId: row.category_id,
+      name: row.name,
+      slug: row.slug,
+      description: row.description,
+      icon: row.icon,
+      parentCategoryId: row.parent_category_id,
+      sortOrder: row.sort_order,
+    }));
     return {
-      data: rows.map((row) => ({
-        categoryId: row.category_id,
-        name: row.name,
-        slug: row.slug,
-        parentCategoryId: row.parent_category_id,
-      })),
+      data: mapped.filter((row) => row.parentCategoryId !== null),
+      groups: mapped
+        .filter((row) => row.parentCategoryId === null)
+        .map((group) => ({
+          ...group,
+          children: mapped.filter((row) => row.parentCategoryId === group.categoryId),
+        })),
     };
   }
 
   async setCategories(userId: number, bookUuid: string, categoryIds: number[]) {
     const book = await this.requireOwnedBook(userId, bookUuid);
     const ids = [...new Set(categoryIds.filter((id) => Number.isInteger(id) && id > 0))];
-    if (ids.length > 5) {
-      throw new BadRequestException('Mỗi sách chỉ được chọn tối đa 5 danh mục.');
-    }
     if (ids.length > 0) {
       const placeholders = ids.map(() => '?').join(',');
       const existing = await this.db.query<{ category_id: number }[]>(
-        `SELECT category_id FROM categories WHERE is_active = 1 AND category_id IN (${placeholders})`,
+        `SELECT category_id FROM categories
+         WHERE is_active = 1 AND category_id IN (${placeholders})`,
         ids,
       );
       if (existing.length !== ids.length) {
@@ -751,7 +847,7 @@ export class StudioService {
       `SELECT book_id, book_uuid, title, subtitle, slug, description, language,
               status, visibility, published_at, created_by_user_id, word_count,
               cover_storage_key, cover_mime_type,
-              author_name, publisher_name, publication_year, publication_scope
+              author_name, publisher_name, publication_year, publication_scope, age_rating, trim_size, trim_width_mm, trim_height_mm, page_style, page_effect, show_page_numbers, reader_default_mode
        FROM books WHERE book_uuid = ? AND deleted_at IS NULL LIMIT 1`,
       [bookUuid],
     );
@@ -797,6 +893,16 @@ export class StudioService {
       status: book.status,
       visibility: book.visibility,
       publicationScope: book.publication_scope ?? 'draft',
+      ageRating: book.age_rating ?? 'all',
+      layout: {
+        trimSize: book.trim_size ?? 'A5',
+        widthMm: Number(book.trim_width_mm ?? 148),
+        heightMm: Number(book.trim_height_mm ?? 210),
+        pageStyle: book.page_style ?? 'lines',
+        pageEffect: book.page_effect ?? 'paper',
+        showPageNumbers: Number(book.show_page_numbers ?? 1) === 1,
+        readerDefaultMode: book.reader_default_mode ?? 'page',
+      },
       authorName: book.author_name,
       publisherName: book.publisher_name,
       publicationYear: book.publication_year,

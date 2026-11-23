@@ -322,7 +322,25 @@ test('catalog filters: category, author và publisher gửi bộ lọc trên des
   await page.route('**/categories', (route) =>
     route.fulfill({
       json: {
-        data: [{ category_id: 1, parent_category_id: null, name: 'Danh mục kiểm thử', slug: 'test-category', description: null, sort_order: 1, is_active: 1 }],
+        data: [
+          { category_id: 2, parent_category_id: 1, name: 'Danh mục kiểm thử', slug: 'test-category', description: 'Mô tả kiểm thử', icon: null, sort_order: 101, is_active: 1 },
+        ],
+        groups: [
+          {
+            category_id: 1,
+            parent_category_id: null,
+            name: 'Nhóm kiểm thử',
+            slug: 'test-group',
+            description: 'Nhóm dùng cho kiểm thử',
+            icon: null,
+            sort_order: 1,
+            is_active: 1,
+            children: [
+              { category_id: 2, parent_category_id: 1, name: 'Danh mục kiểm thử', slug: 'test-category', description: 'Mô tả kiểm thử', icon: null, sort_order: 101, is_active: 1 },
+            ],
+          },
+        ],
+        ageRatings: ['all', '6+', '13+', '16+', '18+', '19+'],
       },
     }),
   );
@@ -355,23 +373,24 @@ test('catalog filters: category, author và publisher gửi bộ lọc trên des
   const categoryFilter = page.locator(`#discover-category-${suffix}`);
   const authorFilter = page.locator(`#discover-author-${suffix}`);
   const publisherFilter = page.locator(`#discover-publisher-${suffix}`);
-  await expect(categoryFilter.locator('option[value="test-category"]')).toHaveCount(1);
-  await expect(authorFilter.locator('option[value="test-author"]')).toHaveCount(1);
-  await expect(publisherFilter.locator('option[value="test-publisher"]')).toHaveCount(1);
-  await categoryFilter.selectOption('test-category');
-  await expect(page).toHaveURL(/category=test-category/);
-  await authorFilter.selectOption('test-author');
-  await expect(page).toHaveURL(/author=test-author/);
-  await publisherFilter.selectOption('test-publisher');
-  await expect(page).toHaveURL(/publisher=test-publisher/);
+  await categoryFilter.getByPlaceholder('Tìm thể loại...').fill('Danh mục kiểm thử');
+  const categoryCheckbox = page.locator(`#discover-category-${suffix}-test-group-test-category`);
+  await expect(categoryCheckbox).toBeVisible();
+  await categoryCheckbox.click();
+  await expect(page).toHaveURL(/categories=test-category/);
+  await expect(categoryCheckbox).toBeChecked();
+  await authorFilter.fill('Tác giả kiểm thử');
+  await expect(page).toHaveURL(/author=/);
+  await publisherFilter.fill('Nhà xuất bản kiểm thử');
+  await expect(page).toHaveURL(/publisher=/);
   await expect
     .poll(() =>
       bookQueries.some((url) => {
         const query = new URL(url).searchParams;
         return (
-          query.get('category') === 'test-category' &&
-          query.get('author') === 'test-author' &&
-          query.get('publisher') === 'test-publisher'
+          query.get('categories') === 'test-category' &&
+          query.get('author') === 'Tác giả kiểm thử' &&
+          query.get('publisher') === 'Nhà xuất bản kiểm thử'
         );
       }),
     )

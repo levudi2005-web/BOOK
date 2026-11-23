@@ -22,6 +22,8 @@ const nav = [
   { href: '/admin', label: 'Tổng quan', icon: StarIcon, exact: true },
   { href: '/admin/users', label: 'Người dùng', icon: UserIcon },
   { href: '/admin/books', label: 'Quản lý sách', icon: LibraryIcon },
+  { href: '/admin/categories', label: 'Danh mục sách', icon: StarIcon },
+  { href: '/admin/feedback', label: 'Phản hồi & báo cáo', icon: BellIcon },
   { href: '/admin/moderation', label: 'Kiểm duyệt', icon: ShieldIcon },
   { href: '/admin/roles', label: 'Admin & phân quyền', icon: BellIcon },
   { href: '/admin/security', label: 'Bảo mật & nhật ký', icon: ShieldIcon },
@@ -124,7 +126,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <main className="container-site py-8">{children}</main>
+        <main className="container-site animate-fade-up py-8">{children}</main>
       </div>
     </div>
   );

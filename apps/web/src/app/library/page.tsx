@@ -1,5 +1,6 @@
 import { PageHeader } from '@/components/page-header';
 import { LibraryExplorer } from '@/components/library/library-explorer';
+import { SectionQuickMenu } from '@/components/section-quick-menu';
 
 export const metadata = {
   title: 'Thư viện của tôi',
@@ -16,6 +17,7 @@ export default function LibraryPage() {
       <div className="container-site py-8">
         <LibraryExplorer />
       </div>
+      <SectionQuickMenu active="/library" />
     </>
   );
 }
